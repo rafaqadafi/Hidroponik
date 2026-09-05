@@ -1,0 +1,6 @@
+Mqtt tidak publish secara terus menerus. ketik ada perubahan angka TDS berubah ≥ 0,1 ppm dan suhu  ≥ 0,01 °C maka MQTT akan publish. 
+Tetapi heartbeat MQTT tetap 60 detik. meskipun tidak ada perubahan dalam 60 detik kedepan, MQTT tetap publish data.
+
+Startup jaringan: WiFiManager harus berhasil menghubungkan Wi-Fi terlebih dahulu melalui kredensial tersimpan atau AP konfigurasi `TDS-MQTT-Setup`. Password AP dan OTA disimpan di file lokal yang tidak di-commit. Setelah Wi-Fi dan OTA siap, task sensor, relay, dan output baru dijalankan. Jika Wi-Fi terputus, task-task tersebut menunggu sampai tersambung lagi; koneksi MQTT dilakukan setelahnya.
+Ultrasonik: trigger GPIO 12, echo GPIO 14, pulsa trigger 150 us. Kalibrasi dan rentang valid asli 20-600 cm tetap berada di src/Ultrasonic/UltrasonicSensor.cpp; konfigurasi operasional terpusat di src/Config/config.cpp bagian Ultrasonic.
+OTA: upload pertama melalui USB/COM7. Setelah itu pilih environment esp32-s3-devkitc-1-n16r8-ota dengan hostname hidroponik-esp32.local.
