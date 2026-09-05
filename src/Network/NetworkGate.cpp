@@ -37,10 +37,4 @@ bool waitUntilConnected(TickType_t timeout)
     return (bits & NETWORK_CONNECTED_BIT) != 0;
 }
 
-bool isConnected()
-{
-    return eventGroup != nullptr &&
-           (xEventGroupGetBits(eventGroup) & NETWORK_CONNECTED_BIT) != 0;
-}
-
 }
