@@ -6,4 +6,4 @@
 /include/secrets.h
 /platformio_override.ini
 /AGENTS.md
-hardware/easyeda/Nad_voltage_divider_rapi.json
+hardware/easyeda/schematic.json
