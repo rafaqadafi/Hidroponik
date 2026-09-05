@@ -6,7 +6,7 @@ Ultrasonik: trigger GPIO 12, echo GPIO 14, pulsa trigger 150 us. Kalibrasi dan r
 Upload: hanya USB/COM7 melalui pio run -t upload. Environment upload OTA sudah dihapus; layanan OTA masih berada di firmware. File override lama tidak dibaca PlatformIO.
 
 Credential: salin include/secrets.example.h menjadi include/secrets.h dan isi password lokal. Jangan commit file secrets atau password asli.
-Git: AGENTS.md dan CLAUDE.md di-ignore untuk panduan lokal. README.md adalah halaman dokumentasi GitHub.
+Git: AGENTS.md di-ignore untuk panduan lokal. README.md adalah halaman dokumentasi GitHub.
 ADC: TDS A0, turbidity A1, pH A2. Pin operasional ada di src/Config/config.cpp.
 TDS: tegangan terkompensasi <= 0.0065 V menghasilkan 0 ppm, bukan otomatis null. Null ditentukan oleh validitas sensor dan suhu.
 WiFi putus: task menunggu saat mencapai gate berikutnya; relay tetap pada keadaan terakhir. MQTT tidak menjadi syarat pelepasan task sensor.

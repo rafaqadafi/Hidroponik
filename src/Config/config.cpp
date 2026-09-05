@@ -7,7 +7,7 @@ namespace Pins {
 // Pin board ESP32-S3 dan perangkat yang terhubung.
 const uint8_t I2C_SDA = 8;
 const uint8_t I2C_SCL = 9;
-const uint8_t DS18B20 = 4;
+const uint8_t DS18B20 = 6;
 const uint8_t ULTRASONIC_TRIGGER = 12;
 const uint8_t ULTRASONIC_ECHO = 14;
 const uint8_t RELAY_SER = 10;

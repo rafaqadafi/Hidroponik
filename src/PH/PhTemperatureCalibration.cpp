@@ -7,7 +7,7 @@
 
 constexpr uint8_t I2C_SDA = 8;
 constexpr uint8_t I2C_SCL = 9;
-constexpr uint8_t DS18B20_PIN = 4;
+constexpr uint8_t DS18B20_PIN = 6;
 constexpr uint8_t ADS1115_ADDRESS = 0x48;
 constexpr uint8_t PH_CHANNEL = 2;  // Sensor pH pada ADS1115 A2
 

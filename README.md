@@ -20,7 +20,7 @@ Board dikonfigurasi sebagai ESP32-S3 DevKitC-1 N16R8 dengan 16 MB flash dan 8 MB
 | --- | --- |
 | I2C SDA: ADS1115 dan BH1750 | 8 |
 | I2C SCL: ADS1115 dan BH1750 | 9 |
-| Data DS18B20 | 4 |
+| Data DS18B20 | 6 |
 | Trigger ultrasonik | 12 |
 | Echo ultrasonik | 14 |
 | 74HC595 SER | 10 |
@@ -124,7 +124,7 @@ TDS pada tegangan terkompensasi <= 0,0065 V menghasilkan 0 ppm. Payload `null` d
 
 ## Dokumentasi lokal dan Git
 
-`README.md` merupakan halaman dokumentasi GitHub. `AGENTS.md` dan `CLAUDE.md` diabaikan Git sebagai panduan kerja lokal. File credential `include/secrets.h`, override lama `platformio_override.ini`, dan hasil build `.pio` juga diabaikan. Template credential tetap disertakan agar project dapat disiapkan pada komputer lain.
+`README.md` merupakan halaman dokumentasi GitHub. `AGENTS.md` diabaikan Git sebagai panduan kerja lokal. File credential `include/secrets.h`, override lama `platformio_override.ini`, dan hasil build `.pio` juga diabaikan. Template credential tetap disertakan agar project dapat disiapkan pada komputer lain.
 
 ## Struktur project
 
