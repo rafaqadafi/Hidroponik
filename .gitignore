@@ -5,3 +5,5 @@
 .vscode/ipch
 /include/secrets.h
 /platformio_override.ini
+/AGENTS.md
+/CLAUDE.md
