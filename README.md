@@ -83,7 +83,12 @@ Broker yang dikonfigurasi adalah `broker.emqx.io:1883`. Topic menggunakan prefix
 
 | Fungsi | Topic |
 | --- | --- |
-| Data sensor | `uji-prototype/sensor/tds`, `temperature`, `distance`, `light`, `turbidity`, `ph` di bawah prefix `uji-prototype/sensor/` |
+| TDS | `uji-prototype/sensor/tds` |
+| Suhu | `uji-prototype/sensor/temperature` |
+| Jarak | `uji-prototype/sensor/distance` |
+| Cahaya | `uji-prototype/sensor/light` |
+| Kekeruhan | `uji-prototype/sensor/turbidity` |
+| pH | `uji-prototype/sensor/ph` |
 | Perintah relay | `uji-prototype/relay/command` |
 | Status relay | `uji-prototype/relay/status` |
 | Konfigurasi sistem | `uji-prototype/system/config` |
@@ -114,6 +119,12 @@ Broker publik dan prefix topic bersama tidak memberikan isolasi perangkat. Untuk
 - Kalibrasi ultrasonik tetap berada di [UltrasonicSensor.cpp](src/Ultrasonic/UltrasonicSensor.cpp). Rentang valid firmware saat ini 20–600 cm; ini bukan jaminan spesifikasi semua varian sensor.
 
 Setelah mengubah konfigurasi atau kalibrasi, build dan upload ulang firmware.
+
+TDS pada tegangan terkompensasi <= 0,0065 V menghasilkan 0 ppm. Payload `null` digunakan ketika pembacaan dinilai tidak valid oleh firmware, misalnya sensor TDS atau suhu belum siap.
+
+## Dokumentasi lokal dan Git
+
+`README.md` merupakan halaman dokumentasi GitHub. `AGENTS.md` dan `CLAUDE.md` diabaikan Git sebagai panduan kerja lokal. File credential `include/secrets.h`, override lama `platformio_override.ini`, dan hasil build `.pio` juga diabaikan. Template credential tetap disertakan agar project dapat disiapkan pada komputer lain.
 
 ## Struktur project
 
