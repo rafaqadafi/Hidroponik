@@ -6,4 +6,7 @@
 /include/secrets.h
 /platformio_override.ini
 /AGENTS.md
-hardware/easyeda/schematic.json
+/hardware/
+
+# Obsidian local vault metadata
+.obsidian/
