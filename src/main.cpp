@@ -16,24 +16,15 @@
 
 void outputTask(void *)
 {
-    TickType_t lastTdsPublish = 0;
-    TickType_t lastTemperaturePublish = 0;
-    TickType_t lastDistancePublish = 0;
-    TickType_t lastLightPublish = 0;
-    TickType_t lastTurbidityPublish = 0;
-    TickType_t lastPhPublish = 0;
+    TickType_t lastSensorPublish = 0;
+    TickType_t lastStatusPublish = 0;
     float lastPublishedTds = 0.0f;
     float lastPublishedTemperature = 0.0f;
     float lastPublishedDistance = 0.0f;
     float lastPublishedLight = 0.0f;
     float lastPublishedTurbidity = 0.0f;
     float lastPublishedPh = 0.0f;
-    bool tdsPublished = false;
-    bool temperaturePublished = false;
-    bool distancePublished = false;
-    bool lightPublished = false;
-    bool turbidityPublished = false;
-    bool phPublished = false;
+    bool sensorsPublished = false;
     bool lastTdsValid = false;
     bool lastTemperatureValid = false;
     bool lastDistanceValid = false;
@@ -172,79 +163,54 @@ void outputTask(void *)
                 fabsf(ph - lastPublishedPh) >= Config::Output::PH_CHANGE_THRESHOLD;
             const bool tdsRequested = MqttPublisher::takeTdsRequest();
 
-            if (tdsRequested || !tdsPublished || tdsValid != lastTdsValid ||
-                tdsChanged ||
-                now - lastTdsPublish >=
+            const bool validityChanged = (tdsValid != lastTdsValid) ||
+                                         (temperatureValid != lastTemperatureValid) ||
+                                         (distanceValid != lastDistanceValid) ||
+                                         (lightValid != lastLightValid) ||
+                                         (turbidityValid != lastTurbidityValid) ||
+                                         (phValid != lastPhValid);
+            const bool valueChanged = tdsChanged || temperatureChanged ||
+                                      distanceChanged || lightChanged ||
+                                      turbidityChanged || phChanged;
+
+            if (!sensorsPublished || tdsRequested || validityChanged ||
+                valueChanged ||
+                now - lastSensorPublish >=
                     pdMS_TO_TICKS(Config::Output::MQTT_HEARTBEAT_MS)) {
-                MqttPublisher::publishTds(ppm, tdsValid);
+                MqttPublisher::SensorData sensorData{
+                    ppm, tdsValid,
+                    temperature, temperatureValid,
+                    distanceCm, distanceValid,
+                    lightLux, lightValid,
+                    turbidityNtu, turbidityValid,
+                    ph, phValid
+                };
+                MqttPublisher::publishSensors(sensorData);
                 lastPublishedTds = ppm;
-                lastTdsValid = tdsValid;
-                lastTdsPublish = now;
-                tdsPublished = true;
-            }
-
-            if (!temperaturePublished ||
-                temperatureValid != lastTemperatureValid ||
-                temperatureChanged ||
-                now - lastTemperaturePublish >=
-                    pdMS_TO_TICKS(Config::Output::MQTT_HEARTBEAT_MS)) {
-                MqttPublisher::publishTemperature(temperature, temperatureValid);
                 lastPublishedTemperature = temperature;
-                lastTemperatureValid = temperatureValid;
-                lastTemperaturePublish = now;
-                temperaturePublished = true;
-            }
-
-            if (!distancePublished || distanceValid != lastDistanceValid ||
-                distanceChanged ||
-                now - lastDistancePublish >=
-                    pdMS_TO_TICKS(Config::Output::MQTT_HEARTBEAT_MS)) {
-                MqttPublisher::publishDistance(distanceCm, distanceValid);
                 lastPublishedDistance = distanceCm;
-                lastDistanceValid = distanceValid;
-                lastDistancePublish = now;
-                distancePublished = true;
-            }
-
-            if (!lightPublished || lightValid != lastLightValid ||
-                lightChanged ||
-                now - lastLightPublish >=
-                    pdMS_TO_TICKS(Config::Output::MQTT_HEARTBEAT_MS)) {
-                MqttPublisher::publishLight(lightLux, lightValid);
                 lastPublishedLight = lightLux;
-                lastLightValid = lightValid;
-                lastLightPublish = now;
-                lightPublished = true;
-            }
-
-            if (!turbidityPublished ||
-                turbidityValid != lastTurbidityValid || turbidityChanged ||
-                now - lastTurbidityPublish >=
-                    pdMS_TO_TICKS(Config::Output::MQTT_HEARTBEAT_MS)) {
-                MqttPublisher::publishTurbidity(
-                    turbidityNtu, turbidityValid);
                 lastPublishedTurbidity = turbidityNtu;
-                lastTurbidityValid = turbidityValid;
-                lastTurbidityPublish = now;
-                turbidityPublished = true;
-            }
-
-            if (!phPublished || phValid != lastPhValid || phChanged ||
-                now - lastPhPublish >=
-                    pdMS_TO_TICKS(Config::Output::MQTT_HEARTBEAT_MS)) {
-                MqttPublisher::publishPh(ph, phValid);
                 lastPublishedPh = ph;
+                lastTdsValid = tdsValid;
+                lastTemperatureValid = temperatureValid;
+                lastDistanceValid = distanceValid;
+                lastLightValid = lightValid;
+                lastTurbidityValid = turbidityValid;
                 lastPhValid = phValid;
-                lastPhPublish = now;
-                phPublished = true;
+                lastSensorPublish = now;
+                sensorsPublished = true;
             }
 
         // Status relay harus tetap dipublikasikan meskipun sensor belum siap.
         if (Relay::isReady()) {
             const uint8_t relayState = Relay::getState();
-            if (!relayStatePublished || relayState != lastRelayState) {
-                MqttPublisher::publishRelayState(relayState);
+            if (!relayStatePublished || relayState != lastRelayState ||
+                now - lastStatusPublish >=
+                    pdMS_TO_TICKS(Config::Output::MQTT_HEARTBEAT_MS)) {
+                MqttPublisher::publishStatus(relayState);
                 lastRelayState = relayState;
+                lastStatusPublish = now;
                 relayStatePublished = true;
             }
         }
@@ -275,7 +241,7 @@ void setup()
     while (!NetworkGate::waitUntilConnected()) {
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
-    Serial.println("Wi-Fi dan OTA siap, task sensor mulai dijalankan");
+    Serial.println("Wi-Fi siap, task sensor mulai dijalankan");
 
     if (!Ads1115Manager::begin()) {
         Serial.println(

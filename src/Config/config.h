@@ -14,6 +14,11 @@ extern const uint8_t ULTRASONIC_ECHO;
 extern const uint8_t RELAY_SER;
 extern const uint8_t RELAY_RCLK;
 extern const uint8_t RELAY_SRCLK;
+extern const uint8_t LCD_SCLK;
+extern const uint8_t LCD_MOSI;
+extern const uint8_t LCD_DC;
+extern const uint8_t LCD_CS;
+extern const uint8_t LCD_RST;
 }
 
 namespace I2C {
@@ -91,14 +96,9 @@ extern const uint32_t TASK_INTERVAL_MS;
 namespace Mqtt {
 extern const char HOST[];
 extern const uint16_t PORT;
-extern const char TDS_TOPIC[];
-extern const char TEMPERATURE_TOPIC[];
-extern const char DISTANCE_TOPIC[];
-extern const char LIGHT_TOPIC[];
-extern const char TURBIDITY_TOPIC[];
-extern const char PH_TOPIC[];
-extern const char RELAY_COMMAND_TOPIC[];
-extern const char RELAY_STATUS_TOPIC[];
+extern const char SENSOR_TOPIC[];
+extern const char STATUS_TOPIC[];
+extern const char CONTROL_TOPIC[];
 extern const char SYSTEM_CONFIG_TOPIC[];
 extern const char TDS_CONFIG_TOPIC[];
 extern const char PH_CONFIG_TOPIC[];
@@ -112,11 +112,6 @@ extern const uint8_t PUBLISH_QUEUE_LENGTH;
 extern const uint16_t QUEUE_RECEIVE_TIMEOUT_MS;
 extern const uint16_t LOOP_DELAY_MS;
 extern const uint16_t RECONNECT_DELAY_MS;
-}
-
-namespace Ota {
-extern const char HOSTNAME[];
-extern const char PASSWORD[];
 }
 
 }

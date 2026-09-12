@@ -10,23 +10,15 @@
 #include <freertos/task.h>
 #include "Relay/Relay.h"
 #include "Config/config.h"
-#include "OTA/OTAManager.h"
 #include "Network/NetworkGate.h"
 
 namespace {
 
 struct Message {
     enum class Topic : uint8_t {
-        Tds,
-        Temperature,
-        Distance,
-        RelayStatus,
-        Light,
-        Turbidity,
-        Ph
+        Sensor,
+        Status
     } topic;
-    // Payload kalibrasi pH memuat beberapa field JSON dan membutuhkan
-    // lebih dari 80 karakter.
     char payload[256];
 };
 
@@ -186,7 +178,15 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
         }
         return;
     }
-    if (strcmp(topic, Config::Mqtt::RELAY_COMMAND_TOPIC) != 0) return;
+    if (strcmp(topic, Config::Mqtt::CONTROL_TOPIC) != 0) return;
+
+    if (command.indexOf("\"sensor\":\"tds\"") >= 0) {
+        portENTER_CRITICAL(&requestMux);
+        tdsRequested = true;
+        portEXIT_CRITICAL(&requestMux);
+        Serial.println("MQTT request pembacaan TDS diterima");
+        return;
+    }
 
     const int relayKey = command.indexOf("\"relay\":");
     const int stateKey = command.indexOf("\"state\":");
@@ -230,7 +230,6 @@ void task(void *)
     while (true) {
         if (WiFi.status() != WL_CONNECTED) {
             NetworkGate::setConnected(false);
-            OTAManager::handle();
             Serial.println(
                 "Wi-Fi belum terhubung. Mencoba kredensial tersimpan...");
             if (!wifiManager.autoConnect(Config::Mqtt::WIFI_AP_NAME,
@@ -245,19 +244,12 @@ void task(void *)
             Serial.println(WiFi.localIP());
         }
 
-        if (!OTAManager::begin()) {
-            NetworkGate::setConnected(false);
-            Serial.println("OTA belum siap, menunggu Wi-Fi...");
-            vTaskDelay(pdMS_TO_TICKS(Config::Mqtt::RECONNECT_DELAY_MS));
-            continue;
-        }
         NetworkGate::setConnected(true);
-        OTAManager::handle();
 
         if (!mqttClient.connected()) {
             if (mqttClient.connect(clientId)) {
                 Serial.println("MQTT terhubung");
-                mqttClient.subscribe(Config::Mqtt::RELAY_COMMAND_TOPIC);
+                mqttClient.subscribe(Config::Mqtt::CONTROL_TOPIC);
                 mqttClient.subscribe(Config::Mqtt::SYSTEM_CONFIG_TOPIC);
                 mqttClient.subscribe(Config::Mqtt::TDS_CONFIG_TOPIC);
                 mqttClient.subscribe(Config::Mqtt::PH_CONFIG_TOPIC);
@@ -270,35 +262,13 @@ void task(void *)
         }
 
         mqttClient.loop();
-        OTAManager::handle();
         Message message{};
         if (xQueueReceive(
                 queue, &message,
                 pdMS_TO_TICKS(Config::Mqtt::QUEUE_RECEIVE_TIMEOUT_MS))) {
-            const char *topic;
-            switch (message.topic) {
-                case Message::Topic::Tds:
-                    topic = Config::Mqtt::TDS_TOPIC;
-                    break;
-                case Message::Topic::Temperature:
-                    topic = Config::Mqtt::TEMPERATURE_TOPIC;
-                    break;
-                case Message::Topic::Distance:
-                    topic = Config::Mqtt::DISTANCE_TOPIC;
-                    break;
-                case Message::Topic::RelayStatus:
-                    topic = Config::Mqtt::RELAY_STATUS_TOPIC;
-                    break;
-                case Message::Topic::Light:
-                    topic = Config::Mqtt::LIGHT_TOPIC;
-                    break;
-                case Message::Topic::Ph:
-                    topic = Config::Mqtt::PH_TOPIC;
-                    break;
-                default:
-                    topic = Config::Mqtt::TURBIDITY_TOPIC;
-                    break;
-            }
+            const char *topic = (message.topic == Message::Topic::Sensor)
+                ? Config::Mqtt::SENSOR_TOPIC
+                : Config::Mqtt::STATUS_TOPIC;
             if (!mqttClient.publish(topic, message.payload, true)) {
                 Serial.println("MQTT publish gagal");
             }
@@ -319,84 +289,45 @@ bool begin()
            xTaskCreate(task, "MQTT", 8192, nullptr, 1, nullptr) == pdPASS;
 }
 
-void publishTds(float ppm, bool valid)
+void publishSensors(const SensorData &data)
 {
     if (queue == nullptr) return;
     Message message{};
-    message.topic = Message::Topic::Tds;
-    if (valid) snprintf(message.payload, sizeof(message.payload),
-                        "{\"tds_ppm\":%.1f}", ppm);
-    else snprintf(message.payload, sizeof(message.payload), "{\"tds_ppm\":null}");
+    message.topic = Message::Topic::Sensor;
+
+    char tdsBuf[16], tempBuf[16], distBuf[16], lightBuf[16], turbBuf[16], phBuf[16];
+
+    if (data.tdsValid) snprintf(tdsBuf, sizeof(tdsBuf), "%.1f", data.tdsPpm);
+    else strlcpy(tdsBuf, "null", sizeof(tdsBuf));
+
+    if (data.temperatureValid) snprintf(tempBuf, sizeof(tempBuf), "%.2f", data.temperatureC);
+    else strlcpy(tempBuf, "null", sizeof(tempBuf));
+
+    if (data.distanceValid) snprintf(distBuf, sizeof(distBuf), "%.1f", data.distanceCm);
+    else strlcpy(distBuf, "null", sizeof(distBuf));
+
+    if (data.lightValid) snprintf(lightBuf, sizeof(lightBuf), "%.1f", data.lightLux);
+    else strlcpy(lightBuf, "null", sizeof(lightBuf));
+
+    if (data.turbidityValid) snprintf(turbBuf, sizeof(turbBuf), "%.2f", data.turbidityNtu);
+    else strlcpy(turbBuf, "null", sizeof(turbBuf));
+
+    if (data.phValid) snprintf(phBuf, sizeof(phBuf), "%.3f", data.ph);
+    else strlcpy(phBuf, "null", sizeof(phBuf));
+
+    snprintf(message.payload, sizeof(message.payload),
+             "{\"tds_ppm\":%s,\"temperature_c\":%s,\"distance_cm\":%s,"
+             "\"light_lux\":%s,\"turbidity_ntu\":%s,\"ph\":%s}",
+             tdsBuf, tempBuf, distBuf, lightBuf, turbBuf, phBuf);
+
     xQueueSend(queue, &message, 0);
 }
 
-void publishTemperature(float temperatureC, bool valid)
+void publishStatus(uint8_t state)
 {
     if (queue == nullptr) return;
     Message message{};
-    message.topic = Message::Topic::Temperature;
-    if (valid) snprintf(message.payload, sizeof(message.payload),
-                        "{\"temperature_c\":%.2f}", temperatureC);
-    else snprintf(message.payload, sizeof(message.payload),
-                  "{\"temperature_c\":null}");
-    xQueueSend(queue, &message, 0);
-}
-
-void publishDistance(float distanceCm, bool valid)
-{
-    if (queue == nullptr) return;
-    Message message{};
-    message.topic = Message::Topic::Distance;
-    if (valid) snprintf(message.payload, sizeof(message.payload),
-                        "{\"distance_cm\":%.1f}", distanceCm);
-    else snprintf(message.payload, sizeof(message.payload),
-                  "{\"distance_cm\":null}");
-    xQueueSend(queue, &message, 0);
-}
-
-void publishLight(float lux, bool valid)
-{
-    if (queue == nullptr) return;
-    Message message{};
-    message.topic = Message::Topic::Light;
-    if (valid) snprintf(message.payload, sizeof(message.payload),
-                        "{\"light_lux\":%.1f}", lux);
-    else snprintf(message.payload, sizeof(message.payload),
-                  "{\"light_lux\":null}");
-    xQueueSend(queue, &message, 0);
-}
-
-void publishTurbidity(float ntu, bool valid)
-{
-    if (queue == nullptr) return;
-    Message message{};
-    message.topic = Message::Topic::Turbidity;
-    if (valid) {
-        snprintf(message.payload, sizeof(message.payload),
-                 "{\"turbidity_ntu\":%.2f}", ntu);
-    } else {
-        snprintf(message.payload, sizeof(message.payload),
-                 "{\"turbidity_ntu\":null}");
-    }
-    xQueueSend(queue, &message, 0);
-}
-
-void publishPh(float ph, bool valid)
-{
-    if (queue == nullptr) return;
-    Message message{};
-    message.topic = Message::Topic::Ph;
-    if (valid) snprintf(message.payload, sizeof(message.payload),
-                        "{\"ph\":%.3f}", ph);
-    else snprintf(message.payload, sizeof(message.payload), "{\"ph\":null}");
-    xQueueSend(queue, &message, 0);
-}
-
-void publishRelayState(uint8_t state)
-{
-    if (queue == nullptr) return;
-    Message message{};
-    message.topic = Message::Topic::RelayStatus;
+    message.topic = Message::Topic::Status;
     snprintf(
         message.payload, sizeof(message.payload),
         "{\"relay1\":%s,\"relay2\":%s,\"relay3\":%s,\"relay4\":%s,"

@@ -13,6 +13,11 @@ const uint8_t ULTRASONIC_ECHO = 14;
 const uint8_t RELAY_SER = 10;
 const uint8_t RELAY_RCLK = 18;
 const uint8_t RELAY_SRCLK = 11;
+const uint8_t LCD_SCLK = 16;
+const uint8_t LCD_MOSI = 13;
+const uint8_t LCD_DC = 5;
+const uint8_t LCD_CS = 4;
+const uint8_t LCD_RST = 2;
 }
 
 namespace I2C {
@@ -90,20 +95,15 @@ const uint32_t TASK_INTERVAL_MS = 1000;
 }
 
 namespace Mqtt {
-const char HOST[] = "broker.emqx.io";
+const char HOST[] = "192.168.1.2";
 const uint16_t PORT = 1883;
-const char TDS_TOPIC[] = "uji-prototype/sensor/tds";
-const char TEMPERATURE_TOPIC[] = "uji-prototype/sensor/temperature";
-const char DISTANCE_TOPIC[] = "uji-prototype/sensor/distance";
-const char LIGHT_TOPIC[] = "uji-prototype/sensor/light";
-const char TURBIDITY_TOPIC[] = "uji-prototype/sensor/turbidity";
-const char PH_TOPIC[] = "uji-prototype/sensor/ph";
-const char RELAY_COMMAND_TOPIC[] = "uji-prototype/relay/command";
-const char RELAY_STATUS_TOPIC[] = "uji-prototype/relay/status";
-const char SYSTEM_CONFIG_TOPIC[] = "uji-prototype/system/config";
-const char TDS_CONFIG_TOPIC[] = "uji-prototype/config/tds";
-const char PH_CONFIG_TOPIC[] = "uji-prototype/config/ph";
-const char SENSOR_REQUEST_TOPIC[] = "uji-prototype/sensor/request";
+const char SENSOR_TOPIC[] = "sumenep/hydroponic/sensor";
+const char STATUS_TOPIC[] = "sumenep/hydroponic/status";
+const char CONTROL_TOPIC[] = "sumenep/hydroponic/control";
+const char SYSTEM_CONFIG_TOPIC[] = "sumenep/hydroponic/system/config";
+const char TDS_CONFIG_TOPIC[] = "sumenep/hydroponic/config/tds";
+const char PH_CONFIG_TOPIC[] = "sumenep/hydroponic/config/ph";
+const char SENSOR_REQUEST_TOPIC[] = "sumenep/hydroponic/sensor/request";
 const char WIFI_AP_NAME[] = "TDS-MQTT-Setup";
 const char WIFI_AP_PASSWORD[] = HYDRO_WIFI_AP_PASSWORD;
 const char CLIENT_ID_PREFIX[] = "ESP32-TDS";
@@ -113,12 +113,6 @@ const uint8_t PUBLISH_QUEUE_LENGTH = 8;
 const uint16_t QUEUE_RECEIVE_TIMEOUT_MS = 100;
 const uint16_t LOOP_DELAY_MS = 20;
 const uint16_t RECONNECT_DELAY_MS = 5000;
-}
-
-namespace Ota {
-// PASSWORD harus sama dengan --auth pada platformio_override.ini.
-const char HOSTNAME[] = "hidroponik-esp32";
-const char PASSWORD[] = HYDRO_OTA_PASSWORD;
 }
 
 }

@@ -107,6 +107,11 @@ Catatan pusat proyek monitoring dan otomasi hidroponik berbasis ESP32-S3. Nilai 
 | 74HC595 SER | GPIO $(Get-ConfigValue 'Pins' 'RELAY_SER') |
 | 74HC595 RCLK | GPIO $(Get-ConfigValue 'Pins' 'RELAY_RCLK') |
 | 74HC595 SRCLK | GPIO $(Get-ConfigValue 'Pins' 'RELAY_SRCLK') |
+| LCD SCLK | GPIO $(Get-ConfigValue 'Pins' 'LCD_SCLK') |
+| LCD MOSI | GPIO $(Get-ConfigValue 'Pins' 'LCD_MOSI') |
+| LCD DC | GPIO $(Get-ConfigValue 'Pins' 'LCD_DC') |
+| LCD CS | GPIO $(Get-ConfigValue 'Pins' 'LCD_CS') |
+| LCD RST | GPIO $(Get-ConfigValue 'Pins' 'LCD_RST') |
 | ADS1115 | $(Get-ConfigValue 'I2C' 'ADS1115_ADDRESS') |
 | BH1750 | $(Get-ConfigValue 'I2C' 'BH1750_ADDRESS') |
 | TDS channel | A$(Get-ConfigValue 'Tds' 'ADC_CHANNEL') |
@@ -119,7 +124,6 @@ Catatan pusat proyek monitoring dan otomasi hidroponik berbasis ESP32-S3. Nilai 
 - MQTT heartbeat: $(Get-ConfigValue 'Output' 'MQTT_HEARTBEAT_MS') ms.
 - Relay: active-low $(Get-ConfigValue 'Relay' 'ACTIVE_LOW'), channel $(Get-ConfigValue 'Relay' 'CHANNEL_COUNT').
 - Broker: $(Get-ConfigValue 'Mqtt' 'HOST'):$(Get-ConfigValue 'Mqtt' 'PORT').
-- OTA hostname: $(Get-ConfigValue 'Ota' 'HOSTNAME').
 
 ## Kalibrasi yang dipertahankan
 
@@ -139,10 +143,9 @@ Catatan pusat proyek monitoring dan otomasi hidroponik berbasis ESP32-S3. Nilai 
 
 1. Serial, I2C, mutex, dan task jaringan diinisialisasi.
 2. WiFiManager menyambungkan Wi-Fi atau membuka AP konfigurasi.
-3. ArduinoOTA aktif setelah Wi-Fi tersambung.
-4. NetworkGate dibuka setelah Wi-Fi dan OTA siap.
-5. Sensor, relay, dan output task dibuat; MQTT bukan syarat untuk memulai task sensor.
-6. Saat Wi-Fi terputus, task menunggu gate berikutnya dan relay mempertahankan keadaan terakhir.
+3. NetworkGate dibuka setelah Wi-Fi tersambung.
+4. Sensor, relay, dan output task dibuat; MQTT bukan syarat untuk memulai task sensor.
+5. Saat Wi-Fi terputus, task menunggu gate berikutnya dan relay mempertahankan keadaan terakhir.
 
 ## Aturan perubahan
 

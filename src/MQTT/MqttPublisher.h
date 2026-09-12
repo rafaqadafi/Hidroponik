@@ -18,14 +18,25 @@ struct SystemConfig {
 
 namespace MqttPublisher {
 
+struct SensorData {
+    float tdsPpm;
+    bool tdsValid;
+    float temperatureC;
+    bool temperatureValid;
+    float distanceCm;
+    bool distanceValid;
+    float lightLux;
+    bool lightValid;
+    float turbidityNtu;
+    bool turbidityValid;
+    float ph;
+    bool phValid;
+};
+
 bool begin();
-void publishTds(float ppm, bool valid);
-void publishTemperature(float temperatureC, bool valid);
-void publishDistance(float distanceCm, bool valid);
-void publishLight(float lux, bool valid);
-void publishTurbidity(float ntu, bool valid);
-void publishPh(float ph, bool valid);
-void publishRelayState(uint8_t state);
+void publishSensors(const SensorData &data);
+void publishStatus(uint8_t relayState);
+inline void publishRelayState(uint8_t state) { publishStatus(state); }
 bool getSystemConfig(SystemConfig &config);
 bool isConnected();
 bool takeTdsRequest();

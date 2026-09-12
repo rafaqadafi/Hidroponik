@@ -47,7 +47,7 @@ Driver ultrasonik menggunakan pulsa Trigger/Echo. Untuk modul SR04M, pastikan va
    Copy-Item include/secrets.example.h include/secrets.h
    ```
 
-4. Isi `HYDRO_WIFI_AP_PASSWORD` dan `HYDRO_OTA_PASSWORD` pada `include/secrets.h` dengan password lokal. Gunakan password AP minimal 8 karakter. File ini diabaikan Git; jangan memasukkan password asli ke template atau dokumentasi.
+4. Isi `HYDRO_WIFI_AP_PASSWORD` pada `include/secrets.h` dengan password lokal. Gunakan password AP minimal 8 karakter. File ini diabaikan Git; jangan memasukkan password asli ke template atau dokumentasi.
 5. Sambungkan ESP32 melalui USB. Sesuaikan `upload_port` dan `monitor_port` di [platformio.ini](platformio.ini) jika port perangkat bukan `COM7`.
 
 PlatformIO memasang dependency yang tercantum pada `lib_deps` saat build. Jalankan perintah berikut melalui terminal PlatformIO.
@@ -62,7 +62,7 @@ pio device monitor -p COM7 -b 115200
 
 Tutup Serial Monitor sebelum upload jika port sedang digunakan. Konfigurasi PlatformIO saat ini hanya menyediakan upload USB menggunakan `esptool`.
 
-Modul layanan OTA masih ada dalam firmware dan menggunakan password dari `secrets.h`, tetapi environment upload OTA sudah dihapus. `platformio_override.ini` tidak diperlukan untuk build atau upload USB saat ini.
+Layanan OTA dinonaktifkan. Upload firmware dilakukan melalui USB menggunakan `esptool`.
 
 ## Menghubungkan WiFi
 
@@ -71,7 +71,7 @@ Modul layanan OTA masih ada dalam firmware dan menggunakan password dari `secret
 3. Buka portal WiFiManager, pilih jaringan WiFi, lalu simpan credential.
 4. Periksa Serial Monitor untuk melihat alamat IP dan status koneksi.
 
-Portal memiliki timeout 180 detik dan percobaan koneksi diulang jika belum berhasil. Saat boot, task sensor, relay, dan output baru dibuat setelah WiFi tersambung dan layanan OTA diinisialisasi. Koneksi broker MQTT bukan syarat pelepasan task tersebut.
+Portal memiliki timeout 180 detik dan percobaan koneksi diulang jika belum berhasil. Saat boot, task sensor, relay, dan output baru dibuat setelah WiFi tersambung. Koneksi broker MQTT bukan syarat pelepasan task tersebut.
 
 Jika task jaringan mendeteksi WiFi putus, `NetworkGate` ditutup. Task aplikasi menunggu pada titik tunggu berikutnya sampai koneksi tersedia kembali. Ini tidak otomatis mematikan relay; relay mempertahankan keadaan terakhirnya.
 
@@ -124,7 +124,7 @@ TDS pada tegangan terkompensasi <= 0,0065 V menghasilkan 0 ppm. Payload `null` d
 
 ## Dokumentasi lokal dan Git
 
-`README.md` merupakan halaman dokumentasi GitHub. `AGENTS.md` diabaikan Git sebagai panduan kerja lokal. File credential `include/secrets.h`, override lama `platformio_override.ini`, dan hasil build `.pio` juga diabaikan. Template credential tetap disertakan agar project dapat disiapkan pada komputer lain.
+`README.md` merupakan halaman dokumentasi GitHub. `AGENTS.md` diabaikan Git sebagai panduan kerja lokal. File credential `include/secrets.h` dan hasil build `.pio` juga diabaikan. Template credential tetap disertakan agar project dapat disiapkan pada komputer lain.
 
 ## Struktur project
 
@@ -133,7 +133,6 @@ src/
   Config/          Konfigurasi operasional
   Network/         Gerbang konektivitas task
   MQTT/            Koneksi broker dan antrean publish
-  OTA/             Layanan ArduinoOTA
   I2C/             Mutex bus I2C
   ADS1115/         Pembacaan ADC terfilter
   TDS/             Sensor TDS
