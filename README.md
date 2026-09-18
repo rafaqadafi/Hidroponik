@@ -4,10 +4,17 @@ Project prototipe monitoring dan otomasi hidroponik menggunakan ESP32-S3, Arduin
 
 ## Fitur
 
-- Monitoring TDS, pH, suhu air, kekeruhan, jarak permukaan air, dan intensitas cahaya.
+- Monitoring TDS, pH, suhu air, kekeruhan, jarak permukaan air, intensitas cahaya,
+  empat float switch, serta debit dan volume air.
 - Pengiriman data MQTT saat nilai berubah melewati threshold atau melalui heartbeat 60 detik.
 - Konfigurasi WiFi melalui portal WiFiManager.
 - Kontrol 8 channel relay melalui 74HC595 dan antrean perintah MQTT.
+- Relay hanya dikontrol melalui perintah MQTT; float switch tidak mengubah relay.
+- TFT ILI9488 memakai SPI 20 MHz dan readback SDO/MISO pada GPIO15; re-inisialisasi
+  controller hanya dilakukan saat pemeriksaan status gagal tanpa me-reset ESP32.
+- Tampilan TFT memiliki dua halaman bergaya telemetry: halaman angka untuk seluruh
+  sensor termasuk flow meter, serta halaman grafik historis pH dan cahaya. Halaman
+  berganti otomatis setiap 10 detik dan menyimpan 48 sampel terakhir.
 - Task FreeRTOS dengan mutex untuk berbagi data dan akses I2C.
 - Konfigurasi pin dan parameter operasional terpusat.
 - Otomasi dosing nutrisi dan pH melalui flow Node-RED.
@@ -23,6 +30,18 @@ Board dikonfigurasi sebagai ESP32-S3 DevKitC-1 N16R8 dengan 16 MB flash dan 8 MB
 | Data DS18B20 | 6 |
 | Trigger ultrasonik | 12 |
 | Echo ultrasonik | 14 |
+| Buzzer aktif melalui basis transistor | 7 |
+| Float switch pH-Up | 40 |
+| Float switch Nutrisi A | 41 |
+| Float switch Nutrisi B | 42 |
+| Float switch pH-Down | 39 |
+| Pulsa flow meter YF-S201 | 1 |
+| TFT ILI9488 SCLK | 16 |
+| TFT ILI9488 MOSI/SDI | 13 |
+| TFT ILI9488 MISO/SDO | 15 |
+| TFT ILI9488 DC/RS | 5 |
+| TFT ILI9488 CS | 4 |
+| TFT ILI9488 RST | 2 |
 | 74HC595 SER | 10 |
 | 74HC595 RCLK | 18 |
 | 74HC595 SRCLK | 11 |
@@ -35,7 +54,16 @@ Board dikonfigurasi sebagai ESP32-S3 DevKitC-1 N16R8 dengan 16 MB flash dan 8 MB
 
 Alamat I2C ADS1115 adalah `0x48`, sedangkan BH1750 adalah `0x23`. Relay dikonfigurasi active-low.
 
+Buzzer aktif dikendalikan melalui basis transistor pada GPIO 7. GPIO 33-37 dicadangkan
+untuk Octal-PSRAM pada board N16R8 dan tidak digunakan sebagai GPIO eksternal. Buzzer menyala ketika
+float switch pH-Up mendeteksi cairan habis. Alarm mengulang tiga bip pendek selama kondisi
+cairan habis, lalu berhenti ketika level kembali normal.
+
 Driver ultrasonik menggunakan pulsa Trigger/Echo. Untuk modul SR04M, pastikan varian dan mode modul sesuai; lihat label Trig/RX dan Echo/TX pada dokumentasi modul. Jalur output sensor berlevel 5 V perlu penyesuaian level sebelum masuk GPIO ESP32. Tabel di atas menunjukkan pemetaan firmware, bukan skema rangkaian lengkap.
+
+Flow meter YF-S201 diberi supply 5 V. Jalur output pulsa melewati pembagi tegangan 10 kΩ
+seri dan 22 kΩ ke GND sebelum masuk GPIO1. Perhitungan volume menggunakan sekitar 450 pulsa
+per liter; volume dihitung sejak perangkat menyala dan belum disimpan permanen.
 
 ## Persiapan
 
@@ -79,7 +107,7 @@ ADS1115 yang tidak ditemukan tidak menghentikan startup jaringan. Sensor yang be
 
 ## MQTT dan Node-RED
 
-Broker yang dikonfigurasi adalah `broker.emqx.io:1883`. Topic menggunakan prefix `uji-prototype`.
+Broker yang dikonfigurasi adalah `192.168.1.75:1883`. Topic menggunakan prefix `uji-prototype`.
 
 | Fungsi | Topic |
 | --- | --- |
@@ -89,7 +117,7 @@ Broker yang dikonfigurasi adalah `broker.emqx.io:1883`. Topic menggunakan prefix
 | Cahaya | `uji-prototype/sensor/light` |
 | Kekeruhan | `uji-prototype/sensor/turbidity` |
 | pH | `uji-prototype/sensor/ph` |
-| Perintah relay | `uji-prototype/relay/command` |
+| Perintah relay | `farming/ESP32-HYDROPONIC-01/hydroponic/control` |
 | Status relay | `uji-prototype/relay/status` |
 | Konfigurasi sistem | `uji-prototype/system/config` |
 | Target TDS | `uji-prototype/config/tds` |
@@ -115,10 +143,14 @@ Broker publik dan prefix topic bersama tidak memberikan isolasi perangkat. Untuk
 
 - [src/Config/config.cpp](src/Config/config.cpp): pin, alamat I2C, channel ADC, interval sampling, threshold, dan parameter jaringan.
 - [src/Config/config.h](src/Config/config.h): deklarasi konfigurasi.
-- Kalibrasi TDS, pH, dan turbidity berada dalam `*Sensor.cpp` masing-masing.
+- Kalibrasi TDS dan pH berada dalam `*Sensor.cpp` masing-masing. Turbidity memakai threshold tegangan di `src/Config/config.cpp` tanpa konversi NTU.
 - Kalibrasi ultrasonik tetap berada di [UltrasonicSensor.cpp](src/Ultrasonic/UltrasonicSensor.cpp). Rentang valid firmware saat ini 20–600 cm; ini bukan jaminan spesifikasi semua varian sensor.
 
-Setelah mengubah konfigurasi atau kalibrasi, build dan upload ulang firmware.
+Turbidity tidak dikonversi ke NTU karena pembacaan dipengaruhi cahaya sekitar dan posisi sensor. Firmware memakai hasil kalibrasi tegangan ADS1115 A1: referensi air jernih `Config::Turbidity::CLEAR_WATER_THRESHOLD_VOLTAGE = 2.9533 V`, sedangkan tegangan di bawah `Config::Turbidity::CLOUDY_WATER_REFERENCE_VOLTAGE = 2.6015 V` diklasifikasikan sebagai `AIR KOTOR` dan ditampilkan pada kartu TFT. Tegangan yang sama atau lebih tinggi diberi status `NORMAL`. MQTT mengirim `turbidity_voltage` dalam volt dan `turbidity_status` (`dirty` atau `normal`).
+
+Perhitungan flow menggunakan konstanta datasheet sekitar 450 pulsa per liter pada `Config::Flow::PULSES_PER_LITER`.
+
+Setelah mengubah konfigurasi atau kalibrasi sensor, build dan upload ulang firmware.
 
 TDS pada tegangan terkompensasi <= 0,0065 V menghasilkan 0 ppm. Payload `null` digunakan ketika pembacaan dinilai tidak valid oleh firmware, misalnya sensor TDS atau suhu belum siap.
 

@@ -10,41 +10,9 @@
 
 namespace {
 
-struct CalibrationPoint {
-    float voltage;
-    float ntu;
-};
-
-// Hasil kalibrasi dengan voltage divider yang sama seperti rangkaian utama.
-constexpr CalibrationPoint CAL[] = {
-    {2.81200f,   0.43f},
-    {2.41055f,  18.20f},
-    // Median gabungan dua pengulangan kopi dengan prosedur waktu tetap.
-    {1.51295f, 186.00f}
-};
-
 SemaphoreHandle_t mutex = nullptr;
 float latestVoltage = 0.0f;
-float latestNtu = 0.0f;
 bool measurementValid = false;
-
-float interpolate(float voltage, const CalibrationPoint &a,
-                  const CalibrationPoint &b)
-{
-    return a.ntu + (voltage - a.voltage) *
-           (b.ntu - a.ntu) / (b.voltage - a.voltage);
-}
-
-float voltageToNtu(float voltage)
-{
-    float ntu;
-    if (voltage >= CAL[1].voltage) {
-        ntu = interpolate(voltage, CAL[0], CAL[1]);
-    } else {
-        ntu = interpolate(voltage, CAL[1], CAL[2]);
-    }
-    return max(0.0f, ntu);
-}
 
 void task(void *)
 {
@@ -56,11 +24,9 @@ void task(void *)
         const bool valid =
             voltage > Config::Turbidity::MIN_VALID_VOLTAGE &&
             voltage < Config::Turbidity::MAX_VALID_VOLTAGE;
-        const float ntu = valid ? voltageToNtu(voltage) : 0.0f;
 
         xSemaphoreTake(mutex, portMAX_DELAY);
         latestVoltage = voltage;
-        latestNtu = ntu;
         measurementValid = valid;
         xSemaphoreGive(mutex);
 
@@ -89,15 +55,19 @@ bool isReady()
     return ready;
 }
 
-bool getReading(float &ntu, float &voltage)
+bool getVoltage(float &voltage)
 {
     if (mutex == nullptr) return false;
     xSemaphoreTake(mutex, portMAX_DELAY);
-    ntu = latestNtu;
     voltage = latestVoltage;
     const bool valid = measurementValid;
     xSemaphoreGive(mutex);
     return valid;
+}
+
+bool isDirtyWater(float voltage)
+{
+    return voltage < Config::Turbidity::CLOUDY_WATER_REFERENCE_VOLTAGE;
 }
 
 }

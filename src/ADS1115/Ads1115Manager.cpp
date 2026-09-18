@@ -69,7 +69,9 @@ bool isReady()
 
 float readFilteredVoltage(uint8_t channel)
 {
-    if (!ready || channel > 3) return 0.0f;
+    if (!ready || channel > 3) {
+        return 0.0f;
+    }
 
     xSemaphoreTake(adcMutex, portMAX_DELAY);
     I2CBus::take();
@@ -83,8 +85,8 @@ float readFilteredVoltage(uint8_t channel)
     I2CBus::give();
     xSemaphoreGive(adcMutex);
 
-    return max(0.0f, total / static_cast<float>(averageCount)) *
-           Config::Adc::LSB_VOLTS_GAIN_ONE;
+    const float raw = total / static_cast<float>(averageCount);
+    return max(0.0f, raw) * Config::Adc::LSB_VOLTS_GAIN_ONE;
 }
 
 }

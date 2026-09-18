@@ -25,12 +25,25 @@ struct SensorData {
     bool temperatureValid;
     float distanceCm;
     bool distanceValid;
+    bool phUpNormal;
+    bool phUpValid;
     float lightLux;
     bool lightValid;
-    float turbidityNtu;
+    float turbidityVoltage;
     bool turbidityValid;
+    bool turbidityDirty;
     float ph;
     bool phValid;
+    bool nutrientANormal;
+    bool nutrientAValid;
+    bool nutrientBNormal;
+    bool nutrientBValid;
+    bool phDownNormal;
+    bool phDownValid;
+    float flowRateLpm;
+    bool flowRateValid;
+    float flowVolumeLiters;
+    bool flowVolumeValid;
 };
 
 bool begin();

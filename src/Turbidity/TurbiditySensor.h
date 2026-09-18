@@ -4,6 +4,7 @@ namespace TurbiditySensor {
 
 bool begin();
 bool isReady();
-bool getReading(float &ntu, float &voltage);
+bool getVoltage(float &voltage);
+bool isDirtyWater(float voltage);
 
 }

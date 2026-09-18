@@ -7,12 +7,16 @@
 #include "MQTT/MqttPublisher.h"
 #include "Relay/Relay.h"
 #include "Ultrasonic/UltrasonicSensor.h"
+#include "LevelSwitch/LevelSwitch.h"
+#include "Flow/FlowSensor.h"
+#include "Buzzer/Buzzer.h"
 #include "I2C/I2CBus.h"
 #include "LightSensor/LightSensor.h"
 #include "Turbidity/TurbiditySensor.h"
 #include "PH/PhSensor.h"
 #include "Config/config.h"
 #include "Network/NetworkGate.h"
+#include "Display/Display.h"
 
 void outputTask(void *)
 {
@@ -21,15 +25,28 @@ void outputTask(void *)
     float lastPublishedTds = 0.0f;
     float lastPublishedTemperature = 0.0f;
     float lastPublishedDistance = 0.0f;
+    bool lastPublishedPhUp = false;
+    bool lastPublishedNutrientA = false;
+    bool lastPublishedNutrientB = false;
+    bool lastPublishedPhDown = false;
+    float lastPublishedFlowRate = 0.0f;
+    float lastPublishedFlowVolume = 0.0f;
     float lastPublishedLight = 0.0f;
-    float lastPublishedTurbidity = 0.0f;
+    float lastPublishedTurbidityVoltage = 0.0f;
     float lastPublishedPh = 0.0f;
     bool sensorsPublished = false;
     bool lastTdsValid = false;
     bool lastTemperatureValid = false;
     bool lastDistanceValid = false;
+    bool lastPhUpValid = false;
+    bool lastNutrientAValid = false;
+    bool lastNutrientBValid = false;
+    bool lastPhDownValid = false;
+    bool lastFlowRateValid = false;
+    bool lastFlowVolumeValid = false;
     bool lastLightValid = false;
     bool lastTurbidityValid = false;
+    bool lastTurbidityDirty = false;
     bool lastPhValid = false;
     uint8_t lastRelayState = 0;
     bool relayStatePublished = false;
@@ -52,14 +69,61 @@ void outputTask(void *)
             float distanceCm = 0.0f;
             const bool distanceValid =
                 UltrasonicSensor::getDistanceCm(distanceCm);
+            const bool phUpNormal = LevelSwitch::isNormal();
+            const bool phUpValid = true;
+            const bool nutrientANormal =
+                LevelSwitch::isNormal(LevelSwitch::Id::NutrientA);
+            const bool nutrientAValid = true;
+            const bool nutrientBNormal =
+                LevelSwitch::isNormal(LevelSwitch::Id::NutrientB);
+            const bool nutrientBValid = true;
+            const bool phDownNormal =
+                LevelSwitch::isNormal(LevelSwitch::Id::PhDown);
+            const bool phDownValid = true;
+            Buzzer::setLiquidEmpty(!phUpNormal);
+            float flowRateLpm = 0.0f;
+            float flowVolumeLiters = 0.0f;
+            const bool flowValid = FlowSensor::getReading(
+                flowRateLpm, flowVolumeLiters);
             float lightLux = 0.0f;
             const bool lightValid = LightSensor::getLux(lightLux);
-            float turbidityNtu = 0.0f;
             float turbidityVoltage = 0.0f;
-            const bool turbidityValid = TurbiditySensor::getReading(
-                turbidityNtu, turbidityVoltage);
+            const bool turbidityValid = TurbiditySensor::getVoltage(
+                turbidityVoltage);
+            const bool turbidityDirty = turbidityValid &&
+                TurbiditySensor::isDirtyWater(turbidityVoltage);
             const bool phValid = temperatureValid && PhSensor::isReady();
             const float ph = phValid ? PhSensor::getPh(temperature) : 0.0f;
+
+            Display::SensorViewData viewData{
+                temperature,
+                temperatureValid,
+                ph,
+                phValid,
+                ppm,
+                tdsValid,
+                distanceCm,
+                distanceValid,
+                phUpNormal,
+                phUpValid,
+                nutrientANormal,
+                nutrientAValid,
+                nutrientBNormal,
+                nutrientBValid,
+                phDownNormal,
+                phDownValid,
+                lightLux,
+                lightValid,
+                turbidityVoltage,
+                turbidityValid,
+                turbidityDirty,
+                flowRateLpm,
+                flowVolumeLiters,
+                flowValid,
+                NetworkGate::isConnected(),
+                MqttPublisher::isConnected()
+            };
+            Display::update(viewData);
 
             char tdsText[16];
             char temperatureText[16];
@@ -79,68 +143,30 @@ void outputTask(void *)
                          static_cast<unsigned long>(
                              UltrasonicSensor::getLastEchoDurationUs()));
             }
-
-            SystemConfig config{};
-            const bool configValid = MqttPublisher::getSystemConfig(config);
-            char dayText[8];
-            if (configValid) snprintf(dayText, sizeof(dayText), "%u", config.day);
-            else strlcpy(dayText, "--", sizeof(dayText));
+            const char *phUpText = phUpNormal ? "OK" : "LOW";
+            const char *nutrientAText = nutrientANormal ? "LOW" : "OK";
+            const char *nutrientBText = nutrientBNormal ? "LOW" : "OK";
+            const char *phDownText = phDownNormal ? "LOW" : "OK";
 
             const TickType_t now = xTaskGetTickCount();
             if (lastSerialPrint == 0 ||
                 now - lastSerialPrint >=
                     pdMS_TO_TICKS(Config::Output::SERIAL_REFRESH_MS)) {
-                const uint8_t relayState = Relay::getState();
-                const char *relay3Text = (relayState & (1U << 2)) ? "ON" : "OFF";
-                const char *relay4Text = (relayState & (1U << 3)) ? "ON" : "OFF";
-                if (configValid) {
-                    Serial.printf(
-                        "TDS:%s ppm | Batas:%.0f-%.0f | Target:%.0f ppm | "
-                        "Suhu:%s C | Jarak:%s cm | Cahaya:%.1f lux | "
-                        "Turbidity:%.2f NTU (%.4f V) | pH:%.3f "
-                        "[%.2f-%.2f target %.2f] | R3:%s | R4:%s | "
-                        "Relay:0x%02X | "
-                        "MQTT:%s | Hari:%s | Fase:%s\n",
-                        tdsText,
-                        config.tdsMin,
-                        config.tdsMax,
-                        config.targetTds,
-                        temperatureText,
-                        distanceText,
-                        lightValid ? lightLux : -1.0f,
-                        turbidityValid ? turbidityNtu : -1.0f,
-                        turbidityValid ? turbidityVoltage : -1.0f,
-                        phValid ? ph : -1.0f,
-                        config.phMin,
-                        config.phMax,
-                        config.targetPh,
-                        relay3Text,
-                        relay4Text,
-                        relayState,
-                        MqttPublisher::isConnected() ? "ON" : "OFF",
-                        dayText,
-                        config.phase
-                    );
-                } else {
-                    Serial.printf(
-                        "TDS:%s ppm | Batas:-- | Target:-- | Suhu:%s C | "
-                        "Jarak:%s cm | Cahaya:%.1f lux | "
-                        "Turbidity:%.2f NTU (%.4f V) | pH:%.3f | "
-                        "R3:%s | R4:%s | Relay:0x%02X | MQTT:%s | "
-                        "Hari:-- | Fase:--\n",
-                        tdsText,
-                        temperatureText,
-                        distanceText,
-                        lightValid ? lightLux : -1.0f,
-                        turbidityValid ? turbidityNtu : -1.0f,
-                        turbidityValid ? turbidityVoltage : -1.0f,
-                        phValid ? ph : -1.0f,
-                        relay3Text,
-                        relay4Text,
-                        relayState,
-                        MqttPublisher::isConnected() ? "ON" : "OFF"
-                    );
-                }
+                char phText[16], turbText[16], lightText[16];
+                if (phValid) snprintf(phText, sizeof(phText), "%.2f", ph);
+                else strlcpy(phText, "ERR", sizeof(phText));
+                if (turbidityValid) snprintf(turbText, sizeof(turbText), "%.4f", turbidityVoltage);
+                else strlcpy(turbText, "ERR", sizeof(turbText));
+                if (lightValid) snprintf(lightText, sizeof(lightText), "%.1f", lightLux);
+                else strlcpy(lightText, "ERR", sizeof(lightText));
+
+                Serial.printf("Suhu: %s C | pH: %s | TDS: %s ppm | Turbidity: %s V (%s) | Jarak: %s cm | Cahaya: %s lux | Float pH Up: %s | Nutrisi A: %s | Nutrisi B: %s | pH Down: %s | Debit: %.2f L/min | Volume: %.3f L\n",
+                              temperatureText, phText, tdsText, turbText,
+                              turbidityDirty ? "AIR KOTOR" : "NORMAL",
+                              distanceText, lightText, phUpText,
+                              nutrientAText, nutrientBText, phDownText,
+                              flowValid ? flowRateLpm : 0.0f,
+                              flowValid ? flowVolumeLiters : 0.0f);
                 lastSerialPrint = now;
             }
 
@@ -153,12 +179,28 @@ void outputTask(void *)
             const bool distanceChanged = distanceValid &&
                 fabsf(distanceCm - lastPublishedDistance) >=
                     Config::Output::DISTANCE_CHANGE_THRESHOLD;
+            const bool phUpChanged =
+                (phUpNormal != lastPublishedPhUp);
+            const bool nutrientAChanged =
+                (nutrientANormal != lastPublishedNutrientA);
+            const bool nutrientBChanged =
+                (nutrientBNormal != lastPublishedNutrientB);
+            const bool phDownChanged =
+                (phDownNormal != lastPublishedPhDown);
+            const bool flowRateChanged = flowValid &&
+                fabsf(flowRateLpm - lastPublishedFlowRate) >=
+                    Config::Output::FLOW_RATE_CHANGE_THRESHOLD;
+            const bool flowVolumeChanged = flowValid &&
+                fabsf(flowVolumeLiters - lastPublishedFlowVolume) >=
+                    Config::Output::FLOW_VOLUME_CHANGE_THRESHOLD;
             const bool lightChanged = lightValid &&
                 fabsf(lightLux - lastPublishedLight) >=
                     Config::Output::LIGHT_CHANGE_THRESHOLD;
             const bool turbidityChanged = turbidityValid &&
-                fabsf(turbidityNtu - lastPublishedTurbidity) >=
-                    Config::Output::TURBIDITY_CHANGE_THRESHOLD;
+                fabsf(turbidityVoltage - lastPublishedTurbidityVoltage) >=
+                    Config::Output::TURBIDITY_VOLTAGE_CHANGE_THRESHOLD;
+            const bool turbidityStatusChanged = turbidityValid &&
+                (turbidityDirty != lastTurbidityDirty);
             const bool phChanged = phValid &&
                 fabsf(ph - lastPublishedPh) >= Config::Output::PH_CHANGE_THRESHOLD;
             const bool tdsRequested = MqttPublisher::takeTdsRequest();
@@ -166,12 +208,22 @@ void outputTask(void *)
             const bool validityChanged = (tdsValid != lastTdsValid) ||
                                          (temperatureValid != lastTemperatureValid) ||
                                          (distanceValid != lastDistanceValid) ||
+                                         (phUpValid != lastPhUpValid) ||
+                                         (nutrientAValid != lastNutrientAValid) ||
+                                         (nutrientBValid != lastNutrientBValid) ||
+                                         (phDownValid != lastPhDownValid) ||
+                                         (flowValid != lastFlowRateValid) ||
+                                         (flowValid != lastFlowVolumeValid) ||
                                          (lightValid != lastLightValid) ||
                                          (turbidityValid != lastTurbidityValid) ||
                                          (phValid != lastPhValid);
             const bool valueChanged = tdsChanged || temperatureChanged ||
-                                      distanceChanged || lightChanged ||
-                                      turbidityChanged || phChanged;
+                                      distanceChanged || phUpChanged ||
+                                      nutrientAChanged || nutrientBChanged ||
+                                      phDownChanged || flowRateChanged ||
+                                      flowVolumeChanged ||
+                                      lightChanged || turbidityChanged ||
+                                      turbidityStatusChanged || phChanged;
 
             if (!sensorsPublished || tdsRequested || validityChanged ||
                 valueChanged ||
@@ -181,34 +233,53 @@ void outputTask(void *)
                     ppm, tdsValid,
                     temperature, temperatureValid,
                     distanceCm, distanceValid,
+                    phUpNormal, phUpValid,
                     lightLux, lightValid,
-                    turbidityNtu, turbidityValid,
-                    ph, phValid
+                    turbidityVoltage, turbidityValid, turbidityDirty,
+                    ph, phValid,
+                    nutrientANormal, nutrientAValid,
+                    nutrientBNormal, nutrientBValid,
+                    phDownNormal, phDownValid,
+                    flowRateLpm, flowValid,
+                    flowVolumeLiters, flowValid
                 };
                 MqttPublisher::publishSensors(sensorData);
                 lastPublishedTds = ppm;
                 lastPublishedTemperature = temperature;
                 lastPublishedDistance = distanceCm;
+                lastPublishedPhUp = phUpNormal;
+                lastPublishedNutrientA = nutrientANormal;
+                lastPublishedNutrientB = nutrientBNormal;
+                lastPublishedPhDown = phDownNormal;
+                lastPublishedFlowRate = flowRateLpm;
+                lastPublishedFlowVolume = flowVolumeLiters;
                 lastPublishedLight = lightLux;
-                lastPublishedTurbidity = turbidityNtu;
+                lastPublishedTurbidityVoltage = turbidityVoltage;
                 lastPublishedPh = ph;
                 lastTdsValid = tdsValid;
                 lastTemperatureValid = temperatureValid;
                 lastDistanceValid = distanceValid;
+                lastPhUpValid = phUpValid;
+                lastNutrientAValid = nutrientAValid;
+                lastNutrientBValid = nutrientBValid;
+                lastPhDownValid = phDownValid;
+                lastFlowRateValid = flowValid;
+                lastFlowVolumeValid = flowValid;
                 lastLightValid = lightValid;
                 lastTurbidityValid = turbidityValid;
+                lastTurbidityDirty = turbidityDirty;
                 lastPhValid = phValid;
                 lastSensorPublish = now;
                 sensorsPublished = true;
             }
 
-        // Status relay harus tetap dipublikasikan meskipun sensor belum siap.
+        // Status relay di MQTT dinonaktifkan sementara.
         if (Relay::isReady()) {
             const uint8_t relayState = Relay::getState();
             if (!relayStatePublished || relayState != lastRelayState ||
                 now - lastStatusPublish >=
                     pdMS_TO_TICKS(Config::Output::MQTT_HEARTBEAT_MS)) {
-                MqttPublisher::publishStatus(relayState);
+                // MqttPublisher::publishStatus(relayState);
                 lastRelayState = relayState;
                 lastStatusPublish = now;
                 relayStatePublished = true;
@@ -222,6 +293,12 @@ void setup()
 {
     Serial.begin(115200);
     Wire.begin(Config::Pins::I2C_SDA, Config::Pins::I2C_SCL);
+
+    if (!Display::begin()) {
+        Serial.println("ERROR: Layar TFT gagal dimulai");
+    } else {
+        Serial.println("Display: READY");
+    }
 
     if (!I2CBus::begin()) {
         Serial.println("ERROR: Mutex I2C gagal dibuat");
@@ -259,11 +336,20 @@ void setup()
     if (!UltrasonicSensor::begin()) {
         Serial.println("ERROR: Modul ultrasonik gagal dimulai");
     }
+    if (!LevelSwitch::begin()) {
+        Serial.println("ERROR: Modul level switch gagal dimulai");
+    }
+    if (!FlowSensor::begin()) {
+        Serial.println("ERROR: Modul flow sensor gagal dimulai");
+    }
+    if (!Buzzer::begin()) {
+        Serial.println("ERROR: Modul buzzer gagal dimulai");
+    }
     if (!LightSensor::begin()) {
         Serial.println("ERROR: BH1750 tidak ditemukan");
     }
 
-    if (xTaskCreate(outputTask, "Output", 3072, nullptr, 1, nullptr) != pdPASS) {
+    if (xTaskCreate(outputTask, "Output", 4096, nullptr, 1, nullptr) != pdPASS) {
         Serial.println("ERROR: Task output gagal dibuat");
     }
 }

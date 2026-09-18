@@ -112,6 +112,8 @@ Catatan pusat proyek monitoring dan otomasi hidroponik berbasis ESP32-S3. Nilai 
 | LCD DC | GPIO $(Get-ConfigValue 'Pins' 'LCD_DC') |
 | LCD CS | GPIO $(Get-ConfigValue 'Pins' 'LCD_CS') |
 | LCD RST | GPIO $(Get-ConfigValue 'Pins' 'LCD_RST') |
+| Level switch pH Up | GPIO $(Get-ConfigValue 'Pins' 'LEVEL_SWITCH') |
+| Buzzer aktif melalui basis transistor | GPIO $(Get-ConfigValue 'Pins' 'BUZZER') |
 | ADS1115 | $(Get-ConfigValue 'I2C' 'ADS1115_ADDRESS') |
 | BH1750 | $(Get-ConfigValue 'I2C' 'BH1750_ADDRESS') |
 | TDS channel | A$(Get-ConfigValue 'Tds' 'ADC_CHANNEL') |
@@ -121,6 +123,10 @@ Catatan pusat proyek monitoring dan otomasi hidroponik berbasis ESP32-S3. Nilai 
 ## Parameter penting
 
 - Ultrasonik: trigger $(Get-ConfigValue 'Ultrasonic' 'TRIGGER_PULSE_US') us, timeout echo $(Get-ConfigValue 'Ultrasonic' 'ECHO_TIMEOUT_US') us, interval $(Get-ConfigValue 'Ultrasonic' 'SAMPLE_INTERVAL_MS') ms, stale $(Get-ConfigValue 'Ultrasonic' 'STALE_TIMEOUT_MS') ms, median window $(Get-ConfigValue 'Ultrasonic' 'MEDIAN_WINDOW').
+- Level switch pH Up: active-low $(Get-ConfigValue 'LevelSwitch' 'ACTIVE_LOW'), debounce $(Get-ConfigValue 'LevelSwitch' 'DEBOUNCE_DELAY_MS') ms.
+- Buzzer: aktif-high $(Get-ConfigValue 'Buzzer' 'ACTIVE_HIGH'), mengulang tiga bip saat float switch mendeteksi cairan habis.
+- Relay 1: menyala otomatis saat float switch pH-Up mendeteksi level rendah.
+- MQTT kontrol relay: farming/ESP32-HYDROPONIC-01/hydroponic/control.
 - MQTT heartbeat: $(Get-ConfigValue 'Output' 'MQTT_HEARTBEAT_MS') ms.
 - Relay: active-low $(Get-ConfigValue 'Relay' 'ACTIVE_LOW'), channel $(Get-ConfigValue 'Relay' 'CHANNEL_COUNT').
 - Broker: $(Get-ConfigValue 'Mqtt' 'HOST'):$(Get-ConfigValue 'Mqtt' 'PORT').
@@ -129,7 +135,7 @@ Catatan pusat proyek monitoring dan otomasi hidroponik berbasis ESP32-S3. Nilai 
 
 - TDS: titik CAL 359, 500, 718, dan 1000 ppm; kompensasi suhu aktif; dry threshold sekitar 0,0065 V.
 - pH: interpolasi 3 titik sekitar pH 9,17 / 6,86 / 4,01.
-- Turbidity: interpolasi piecewise 3 titik sekitar 0,43 / 18,2 / 186 NTU. Tegangan kalibrasi dibaca setelah pembagi tegangan rangkaian utama; firmware tidak membagi rasio lagi.
+- Turbidity: voltage-only pada ADS1115 A1; referensi air jernih 2,9533 V dan di bawah 2,6015 V diklasifikasikan AIR KOTOR. Konversi NTU dihapus karena sensitif terhadap cahaya sekitar dan posisi sensor.
 - Ultrasonik: regresi skala 1,0337 dan offset +0,99 cm; rentang valid 20 sampai 600 cm; median window 7; stale setelah 5 detik tanpa echo valid.
 
 ## Keputusan hardware penting

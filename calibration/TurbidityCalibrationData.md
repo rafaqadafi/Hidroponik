@@ -1,6 +1,6 @@
 # Catatan Kalibrasi Turbidity
 
-Status: **sementara, belum diterapkan ke firmware**
+Status: **catatan historis; firmware utama sekarang memakai tegangan dan status, bukan NTU**
 
 Rangkaian saat pengukuran:
 
@@ -45,7 +45,10 @@ Titik kopi belum final karena belum reproducible. Saat pengujian dilanjutkan,
 gunakan pengadukan atau sirkulasi konstan dan ambil 20-30 data stabil sebelum
 memperbarui `src/Turbidity/TurbiditySensor.cpp`.
 
-## Kalibrasi yang masih aktif di firmware
+## Kalibrasi NTU historis
+
+Titik NTU berikut pernah dipakai, tetapi tidak lagi digunakan firmware karena
+hasilnya sensitif terhadap cahaya sekitar dan posisi sensor:
 
 ```cpp
 {2.81200f,   0.43f},
@@ -53,5 +56,6 @@ memperbarui `src/Turbidity/TurbiditySensor.cpp`.
 {1.51295f, 186.00f}
 ```
 
-Jangan mengganti titik aktif menggunakan data sesi terbaru sebelum titik kopi
-divalidasi ulang.
+Firmware utama hanya memakai tegangan ADS1115 A1. Tegangan di bawah
+`Config::Turbidity::CLOUDY_WATER_REFERENCE_VOLTAGE` diklasifikasikan sebagai
+`AIR KOTOR`.

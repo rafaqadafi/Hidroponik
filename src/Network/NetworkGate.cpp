@@ -25,6 +25,12 @@ void setConnected(bool connected)
     else xEventGroupClearBits(eventGroup, NETWORK_CONNECTED_BIT);
 }
 
+bool isConnected()
+{
+    if (eventGroup == nullptr) return false;
+    return (xEventGroupGetBits(eventGroup) & NETWORK_CONNECTED_BIT) != 0;
+}
+
 bool waitUntilConnected(TickType_t timeout)
 {
     if (eventGroup == nullptr) return false;

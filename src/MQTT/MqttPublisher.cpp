@@ -19,7 +19,7 @@ struct Message {
         Sensor,
         Status
     } topic;
-    char payload[256];
+    char payload[512];
 };
 
 WiFiClient wifiClient;
@@ -30,9 +30,26 @@ SemaphoreHandle_t configMutex = nullptr;
 SystemConfig systemConfig{};
 portMUX_TYPE requestMux = portMUX_INITIALIZER_UNLOCKED;
 bool tdsRequested = false;
+portMUX_TYPE mqttStateMux = portMUX_INITIALIZER_UNLOCKED;
+bool mqttConnected = false;
 bool systemConfigReceived = false;
 bool tdsConfigReceived = false;
 bool phConfigReceived = false;
+
+void setMqttConnected(bool connected)
+{
+    portENTER_CRITICAL(&mqttStateMux);
+    mqttConnected = connected;
+    portEXIT_CRITICAL(&mqttStateMux);
+}
+
+bool getMqttConnected()
+{
+    portENTER_CRITICAL(&mqttStateMux);
+    const bool connected = mqttConnected;
+    portEXIT_CRITICAL(&mqttStateMux);
+    return connected;
+}
 
 bool readNumber(const String &json, const char *key, float &value)
 {
@@ -148,45 +165,16 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
 {
     char message[256];
     if (length >= sizeof(message)) {
-        Serial.println("MQTT payload terlalu panjang");
+        Serial.println("MQTT payload relay terlalu panjang");
         return;
     }
     memcpy(message, payload, length);
     message[length] = '\0';
 
-    String command(message);
-    command.replace(" ", "");
-
-    if (strcmp(topic, Config::Mqtt::SYSTEM_CONFIG_TOPIC) == 0) {
-        receiveSystemConfig(command);
-        return;
-    }
-    if (strcmp(topic, Config::Mqtt::TDS_CONFIG_TOPIC) == 0) {
-        receiveTdsConfig(command);
-        return;
-    }
-    if (strcmp(topic, Config::Mqtt::PH_CONFIG_TOPIC) == 0) {
-        receivePhConfig(command);
-        return;
-    }
-    if (strcmp(topic, Config::Mqtt::SENSOR_REQUEST_TOPIC) == 0) {
-        if (command.indexOf("\"sensor\":\"tds\"") >= 0) {
-            portENTER_CRITICAL(&requestMux);
-            tdsRequested = true;
-            portEXIT_CRITICAL(&requestMux);
-            Serial.println("MQTT request pembacaan TDS diterima");
-        }
-        return;
-    }
-    if (strcmp(topic, Config::Mqtt::CONTROL_TOPIC) != 0) return;
-
-    if (command.indexOf("\"sensor\":\"tds\"") >= 0) {
-        portENTER_CRITICAL(&requestMux);
-        tdsRequested = true;
-        portEXIT_CRITICAL(&requestMux);
-        Serial.println("MQTT request pembacaan TDS diterima");
-        return;
-    }
+    const String command(message);
+    const bool isControlTopic =
+        strcmp(topic, Config::Mqtt::CONTROL_TOPIC) == 0;
+    if (!isControlTopic) return;
 
     const int relayKey = command.indexOf("\"relay\":");
     const int stateKey = command.indexOf("\"state\":");
@@ -229,6 +217,7 @@ void task(void *)
 
     while (true) {
         if (WiFi.status() != WL_CONNECTED) {
+            setMqttConnected(false);
             NetworkGate::setConnected(false);
             Serial.println(
                 "Wi-Fi belum terhubung. Mencoba kredensial tersimpan...");
@@ -247,13 +236,24 @@ void task(void *)
         NetworkGate::setConnected(true);
 
         if (!mqttClient.connected()) {
-            if (mqttClient.connect(clientId)) {
+            setMqttConnected(false);
+            const bool connected = (strlen(Config::Mqtt::USERNAME) > 0)
+                ? mqttClient.connect(clientId, Config::Mqtt::USERNAME,
+                                     Config::Mqtt::PASSWORD)
+                : mqttClient.connect(clientId);
+            if (connected) {
+                setMqttConnected(true);
                 Serial.println("MQTT terhubung");
-                mqttClient.subscribe(Config::Mqtt::CONTROL_TOPIC);
-                mqttClient.subscribe(Config::Mqtt::SYSTEM_CONFIG_TOPIC);
-                mqttClient.subscribe(Config::Mqtt::TDS_CONFIG_TOPIC);
-                mqttClient.subscribe(Config::Mqtt::PH_CONFIG_TOPIC);
-                mqttClient.subscribe(Config::Mqtt::SENSOR_REQUEST_TOPIC);
+                const bool controlSubscribed =
+                    mqttClient.subscribe(Config::Mqtt::CONTROL_TOPIC);
+                Serial.printf("MQTT kontrol relay: %s\n",
+                              controlSubscribed
+                                  ? "AKTIF" : "GAGAL");
+                // Subscription konfigurasi dinonaktifkan sementara:
+                // mqttClient.subscribe(Config::Mqtt::SYSTEM_CONFIG_TOPIC);
+                // mqttClient.subscribe(Config::Mqtt::TDS_CONFIG_TOPIC);
+                // mqttClient.subscribe(Config::Mqtt::PH_CONFIG_TOPIC);
+                // mqttClient.subscribe(Config::Mqtt::SENSOR_REQUEST_TOPIC);
             } else {
                 Serial.printf("MQTT gagal, state: %d\n", mqttClient.state());
                 vTaskDelay(pdMS_TO_TICKS(Config::Mqtt::RECONNECT_DELAY_MS));
@@ -261,16 +261,18 @@ void task(void *)
             }
         }
 
-        mqttClient.loop();
+        if (!mqttClient.loop()) {
+            setMqttConnected(false);
+        }
         Message message{};
         if (xQueueReceive(
                 queue, &message,
                 pdMS_TO_TICKS(Config::Mqtt::QUEUE_RECEIVE_TIMEOUT_MS))) {
-            const char *topic = (message.topic == Message::Topic::Sensor)
-                ? Config::Mqtt::SENSOR_TOPIC
-                : Config::Mqtt::STATUS_TOPIC;
-            if (!mqttClient.publish(topic, message.payload, true)) {
-                Serial.println("MQTT publish gagal");
+            if (message.topic == Message::Topic::Sensor) {
+                if (!mqttClient.publish(Config::Mqtt::SENSOR_TOPIC,
+                                        message.payload, true)) {
+                    Serial.println("MQTT publish gagal");
+                }
             }
         }
         vTaskDelay(pdMS_TO_TICKS(Config::Mqtt::LOOP_DELAY_MS));
@@ -295,7 +297,10 @@ void publishSensors(const SensorData &data)
     Message message{};
     message.topic = Message::Topic::Sensor;
 
-    char tdsBuf[16], tempBuf[16], distBuf[16], lightBuf[16], turbBuf[16], phBuf[16];
+    char tdsBuf[16], tempBuf[16], distBuf[16], phUpBuf[8];
+    char nutrientABuf[8], nutrientBBuf[8], phDownBuf[8];
+    char lightBuf[16], turbVoltageBuf[16], turbStatusBuf[16], phBuf[16];
+    char flowRateBuf[16], flowVolumeBuf[16];
 
     if (data.tdsValid) snprintf(tdsBuf, sizeof(tdsBuf), "%.1f", data.tdsPpm);
     else strlcpy(tdsBuf, "null", sizeof(tdsBuf));
@@ -306,43 +311,54 @@ void publishSensors(const SensorData &data)
     if (data.distanceValid) snprintf(distBuf, sizeof(distBuf), "%.1f", data.distanceCm);
     else strlcpy(distBuf, "null", sizeof(distBuf));
 
+    if (data.phUpValid) snprintf(phUpBuf, sizeof(phUpBuf), "%d", data.phUpNormal ? 1 : 0);
+    else strlcpy(phUpBuf, "null", sizeof(phUpBuf));
+
+    if (data.nutrientAValid) snprintf(nutrientABuf, sizeof(nutrientABuf), "%d", data.nutrientANormal ? 1 : 0);
+    else strlcpy(nutrientABuf, "null", sizeof(nutrientABuf));
+
+    if (data.nutrientBValid) snprintf(nutrientBBuf, sizeof(nutrientBBuf), "%d", data.nutrientBNormal ? 1 : 0);
+    else strlcpy(nutrientBBuf, "null", sizeof(nutrientBBuf));
+
+    if (data.phDownValid) snprintf(phDownBuf, sizeof(phDownBuf), "%d", data.phDownNormal ? 1 : 0);
+    else strlcpy(phDownBuf, "null", sizeof(phDownBuf));
+
     if (data.lightValid) snprintf(lightBuf, sizeof(lightBuf), "%.1f", data.lightLux);
     else strlcpy(lightBuf, "null", sizeof(lightBuf));
 
-    if (data.turbidityValid) snprintf(turbBuf, sizeof(turbBuf), "%.2f", data.turbidityNtu);
-    else strlcpy(turbBuf, "null", sizeof(turbBuf));
+    if (data.turbidityValid) {
+        snprintf(turbVoltageBuf, sizeof(turbVoltageBuf), "%.4f", data.turbidityVoltage);
+        snprintf(turbStatusBuf, sizeof(turbStatusBuf), "\"%s\"",
+                 data.turbidityDirty ? "dirty" : "normal");
+    } else {
+        strlcpy(turbVoltageBuf, "null", sizeof(turbVoltageBuf));
+        strlcpy(turbStatusBuf, "null", sizeof(turbStatusBuf));
+    }
 
     if (data.phValid) snprintf(phBuf, sizeof(phBuf), "%.3f", data.ph);
     else strlcpy(phBuf, "null", sizeof(phBuf));
 
+    if (data.flowRateValid) snprintf(flowRateBuf, sizeof(flowRateBuf), "%.3f", data.flowRateLpm);
+    else strlcpy(flowRateBuf, "null", sizeof(flowRateBuf));
+
+    if (data.flowVolumeValid) snprintf(flowVolumeBuf, sizeof(flowVolumeBuf), "%.3f", data.flowVolumeLiters);
+    else strlcpy(flowVolumeBuf, "null", sizeof(flowVolumeBuf));
+
     snprintf(message.payload, sizeof(message.payload),
-             "{\"tds_ppm\":%s,\"temperature_c\":%s,\"distance_cm\":%s,"
-             "\"light_lux\":%s,\"turbidity_ntu\":%s,\"ph\":%s}",
-             tdsBuf, tempBuf, distBuf, lightBuf, turbBuf, phBuf);
+             "{\"payload\":[{\"sensors\":{\"water_temp\":%s,\"ph\":%s,\"tds\":%s,"
+             "\"turbidity_voltage\":%s,\"turbidity_status\":%s,\"distance\":%s,\"light\":%s,\"ph_up_level\":%s,"
+             "\"nutrient_a_level\":%s,\"nutrient_b_level\":%s,\"ph_down_level\":%s,"
+             "\"flow_rate_lpm\":%s,\"flow_volume_l\":%s}}]}",
+             tempBuf, phBuf, tdsBuf, turbVoltageBuf, turbStatusBuf, distBuf, lightBuf, phUpBuf,
+             nutrientABuf, nutrientBBuf, phDownBuf, flowRateBuf, flowVolumeBuf);
 
     xQueueSend(queue, &message, 0);
 }
 
 void publishStatus(uint8_t state)
 {
-    if (queue == nullptr) return;
-    Message message{};
-    message.topic = Message::Topic::Status;
-    snprintf(
-        message.payload, sizeof(message.payload),
-        "{\"relay1\":%s,\"relay2\":%s,\"relay3\":%s,\"relay4\":%s,"
-        "\"relay5\":%s,\"relay6\":%s,\"relay7\":%s,\"relay8\":%s,"
-        "\"state_mask\":%u}",
-        (state & (1U << 0)) ? "true" : "false",
-        (state & (1U << 1)) ? "true" : "false",
-        (state & (1U << 2)) ? "true" : "false",
-        (state & (1U << 3)) ? "true" : "false",
-        (state & (1U << 4)) ? "true" : "false",
-        (state & (1U << 5)) ? "true" : "false",
-        (state & (1U << 6)) ? "true" : "false",
-        (state & (1U << 7)) ? "true" : "false",
-        state);
-    xQueueSend(queue, &message, 0);
+    // Status topic dinonaktifkan sementara
+    (void)state;
 }
 
 bool getSystemConfig(SystemConfig &config)
@@ -356,7 +372,7 @@ bool getSystemConfig(SystemConfig &config)
 
 bool isConnected()
 {
-    return mqttClient.connected();
+    return getMqttConnected();
 }
 
 bool takeTdsRequest()
