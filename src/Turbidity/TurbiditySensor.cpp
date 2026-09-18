@@ -70,4 +70,10 @@ bool isDirtyWater(float voltage)
     return voltage < Config::Turbidity::CLOUDY_WATER_REFERENCE_VOLTAGE;
 }
 
+bool isCloudyWater(float voltage)
+{
+    return voltage >= Config::Turbidity::CLOUDY_WATER_REFERENCE_VOLTAGE &&
+           voltage < Config::Turbidity::CLEAR_WATER_THRESHOLD_VOLTAGE;
+}
+
 }

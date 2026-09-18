@@ -311,7 +311,7 @@ void publishSensors(const SensorData &data)
     if (data.distanceValid) snprintf(distBuf, sizeof(distBuf), "%.1f", data.distanceCm);
     else strlcpy(distBuf, "null", sizeof(distBuf));
 
-    if (data.phUpValid) snprintf(phUpBuf, sizeof(phUpBuf), "%d", data.phUpNormal ? 1 : 0);
+    if (data.phUpValid) snprintf(phUpBuf, sizeof(phUpBuf), "%d", data.phUpNormal ? 0 : 1);
     else strlcpy(phUpBuf, "null", sizeof(phUpBuf));
 
     if (data.nutrientAValid) snprintf(nutrientABuf, sizeof(nutrientABuf), "%d", data.nutrientANormal ? 1 : 0);

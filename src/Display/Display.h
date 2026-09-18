@@ -25,6 +25,7 @@ struct SensorViewData {
     bool lightValid;
     float turbidityVoltage;
     bool turbidityValid;
+    bool turbidityCloudy;
     bool turbidityDirty;
     float flowRateLpm;
     float flowVolumeLiters;

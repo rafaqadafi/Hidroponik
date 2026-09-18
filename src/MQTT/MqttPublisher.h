@@ -31,6 +31,7 @@ struct SensorData {
     bool lightValid;
     float turbidityVoltage;
     bool turbidityValid;
+    bool turbidityCloudy;
     bool turbidityDirty;
     float ph;
     bool phValid;

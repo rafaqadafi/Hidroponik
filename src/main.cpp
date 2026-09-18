@@ -46,6 +46,7 @@ void outputTask(void *)
     bool lastFlowVolumeValid = false;
     bool lastLightValid = false;
     bool lastTurbidityValid = false;
+    bool lastTurbidityCloudy = false;
     bool lastTurbidityDirty = false;
     bool lastPhValid = false;
     uint8_t lastRelayState = 0;
@@ -90,6 +91,8 @@ void outputTask(void *)
             float turbidityVoltage = 0.0f;
             const bool turbidityValid = TurbiditySensor::getVoltage(
                 turbidityVoltage);
+            const bool turbidityCloudy = turbidityValid &&
+                TurbiditySensor::isCloudyWater(turbidityVoltage);
             const bool turbidityDirty = turbidityValid &&
                 TurbiditySensor::isDirtyWater(turbidityVoltage);
             const bool phValid = temperatureValid && PhSensor::isReady();
@@ -116,6 +119,7 @@ void outputTask(void *)
                 lightValid,
                 turbidityVoltage,
                 turbidityValid,
+                turbidityCloudy,
                 turbidityDirty,
                 flowRateLpm,
                 flowVolumeLiters,
@@ -160,9 +164,15 @@ void outputTask(void *)
                 if (lightValid) snprintf(lightText, sizeof(lightText), "%.1f", lightLux);
                 else strlcpy(lightText, "ERR", sizeof(lightText));
 
+                const char *turbidityStatus = !turbidityValid
+                    ? "ERROR"
+                    : (turbidityDirty ? "AIR KOTOR"
+                                      : (turbidityCloudy ? "AIR KERUH"
+                                                          : "AIR JERNIH"));
+
                 Serial.printf("Suhu: %s C | pH: %s | TDS: %s ppm | Turbidity: %s V (%s) | Jarak: %s cm | Cahaya: %s lux | Float pH Up: %s | Nutrisi A: %s | Nutrisi B: %s | pH Down: %s | Debit: %.2f L/min | Volume: %.3f L\n",
                               temperatureText, phText, tdsText, turbText,
-                              turbidityDirty ? "AIR KOTOR" : "NORMAL",
+                              turbidityStatus,
                               distanceText, lightText, phUpText,
                               nutrientAText, nutrientBText, phDownText,
                               flowValid ? flowRateLpm : 0.0f,
@@ -200,7 +210,8 @@ void outputTask(void *)
                 fabsf(turbidityVoltage - lastPublishedTurbidityVoltage) >=
                     Config::Output::TURBIDITY_VOLTAGE_CHANGE_THRESHOLD;
             const bool turbidityStatusChanged = turbidityValid &&
-                (turbidityDirty != lastTurbidityDirty);
+                ((turbidityCloudy != lastTurbidityCloudy) ||
+                 (turbidityDirty != lastTurbidityDirty));
             const bool phChanged = phValid &&
                 fabsf(ph - lastPublishedPh) >= Config::Output::PH_CHANGE_THRESHOLD;
             const bool tdsRequested = MqttPublisher::takeTdsRequest();
@@ -235,7 +246,8 @@ void outputTask(void *)
                     distanceCm, distanceValid,
                     phUpNormal, phUpValid,
                     lightLux, lightValid,
-                    turbidityVoltage, turbidityValid, turbidityDirty,
+                    turbidityVoltage, turbidityValid,
+                    turbidityCloudy, turbidityDirty,
                     ph, phValid,
                     nutrientANormal, nutrientAValid,
                     nutrientBNormal, nutrientBValid,
@@ -267,6 +279,7 @@ void outputTask(void *)
                 lastFlowVolumeValid = flowValid;
                 lastLightValid = lightValid;
                 lastTurbidityValid = turbidityValid;
+                lastTurbidityCloudy = turbidityCloudy;
                 lastTurbidityDirty = turbidityDirty;
                 lastPhValid = phValid;
                 lastSensorPublish = now;

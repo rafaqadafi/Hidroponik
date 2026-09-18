@@ -155,6 +155,21 @@ bool phDownIsLow(const Display::SensorViewData &data)
     return data.phDownValid && data.phDownNormal;
 }
 
+const char *turbidityStatusText(const Display::SensorViewData &data)
+{
+    if (!data.turbidityValid) return "--";
+    if (data.turbidityDirty) return "DIRTY";
+    if (data.turbidityCloudy) return "CLOUDY";
+    return "CLEAR";
+}
+
+uint32_t turbidityStatusColor(const Display::SensorViewData &data)
+{
+    if (data.turbidityDirty) return CLR_BAD;
+    if (data.turbidityCloudy) return CLR_WARN;
+    return ACC_TURB;
+}
+
 bool hasLowFloat(const Display::SensorViewData &data)
 {
     return phUpIsLow(data) || nutrientAIsLow(data) ||
@@ -426,7 +441,7 @@ void drawNumericLayout()
     drawPanelFrame(PANEL_X[1], PANEL_ROW1_Y, PANEL_W, PANEL_H,
                    "LIGHT / LUX", ACC_LIGHT);
     drawPanelFrame(PANEL_X[2], PANEL_ROW1_Y, PANEL_W, PANEL_H,
-                   "TURB / VOLT", ACC_TURB);
+                   "TURB / STATUS", ACC_TURB);
 
     drawPanelFrame(8, FLOW_Y, 464, FLOW_H, "FLOW / YF-S201", ACC_FLOW);
     lcd.drawFastVLine(239, FLOW_Y + 20, FLOW_H - 20, CLR_GRID);
@@ -527,11 +542,11 @@ void updateNumericPage(const Display::SensorViewData &data)
     drawMetricValue(PANEL_X[1], PANEL_ROW1_Y, PANEL_W, PANEL_H,
                     value, "LUX", data.lightValid, ACC_LIGHT);
 
-    snprintf(value, sizeof(value), "%.3f", data.turbidityVoltage);
+    const char *turbidityStatus = turbidityStatusText(data);
     drawMetricValue(PANEL_X[2], PANEL_ROW1_Y, PANEL_W, PANEL_H,
-                    value, data.turbidityDirty ? "DIRTY" : "V",
+                    turbidityStatus, "STATUS",
                     data.turbidityValid,
-                    data.turbidityDirty ? CLR_BAD : ACC_TURB);
+                    turbidityStatusColor(data));
 
     drawFlowValues(data);
     drawLevelFooter(&data);
@@ -691,7 +706,6 @@ void updateTrendsPage(const Display::SensorViewData &data)
     char tdsText[12];
     char distanceText[12];
     char lightText[12];
-    char turbidityText[12];
     char flowRateText[12];
     char flowVolumeText[12];
 
@@ -708,9 +722,6 @@ void updateTrendsPage(const Display::SensorViewData &data)
     if (data.lightValid) snprintf(lightText, sizeof(lightText),
                                   "%.0f", data.light);
     else strlcpy(lightText, "--", sizeof(lightText));
-    if (data.turbidityValid) snprintf(turbidityText, sizeof(turbidityText),
-                                      "%.3f", data.turbidityVoltage);
-    else strlcpy(turbidityText, "--", sizeof(turbidityText));
     if (data.flowValid) {
         snprintf(flowRateText, sizeof(flowRateText), "%.2f",
                  data.flowRateLpm);
@@ -726,9 +737,9 @@ void updateTrendsPage(const Display::SensorViewData &data)
     char lineThree[96];
     snprintf(lineOne, sizeof(lineOne), "T:%sC  PH:%s  TDS:%sppm",
              temperatureText, phText, tdsText);
-    snprintf(lineTwo, sizeof(lineTwo), "LV:%scm  LX:%slx  TB:%sV %s",
-             distanceText, lightText, turbidityText,
-             data.turbidityDirty ? "DIRTY" : "OK");
+    const char *turbidityStatus = turbidityStatusText(data);
+    snprintf(lineTwo, sizeof(lineTwo), "LV:%scm  Light:%s lux  TB:%s",
+             distanceText, lightText, turbidityStatus);
 
     const char *phUpText = !data.phUpValid ? "--" :
                            (data.phUpNormal ? "OK" : "LOW");
