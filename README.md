@@ -126,6 +126,21 @@ Broker yang dikonfigurasi adalah `192.168.1.75:1883`. Topic menggunakan prefix `
 | Target pH | `uji-prototype/config/ph` |
 | Permintaan pembacaan | `uji-prototype/sensor/request` |
 
+Payload telemetry pada topic data menyertakan identitas boot di dalam
+`payload[0]`. `boot_id` disimpan di NVS dan bertambah pada setiap boot atau
+restart ESP32, sedangkan `sequence_number` dimulai dari `1` pada setiap boot
+dan bertambah untuk setiap data telemetry yang dibuat:
+
+```json
+{
+  "payload": [{
+    "boot_id": 12,
+    "sequence_number": 1,
+    "sensors": {}
+  }]
+}
+```
+
 Untuk menjalankan otomasi:
 
 1. Import [flow_hidroponik_modular.json](node-red/flow_hidroponik_modular.json) ke Node-RED.

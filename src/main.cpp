@@ -18,6 +18,7 @@
 #include "Network/NetworkGate.h"
 #include "Display/Display.h"
 #include "Failsafe/Failsafe.h"
+#include "BootIdentity/BootIdentity.h"
 
 void outputTask(void *)
 {
@@ -313,6 +314,9 @@ void outputTask(void *)
 void setup()
 {
     Serial.begin(115200);
+    if (!BootIdentity::begin()) {
+        Serial.println("ERROR: Boot identity NVS gagal dimulai");
+    }
     Wire.begin(Config::Pins::I2C_SDA, Config::Pins::I2C_SCL);
 
     if (!Display::begin()) {

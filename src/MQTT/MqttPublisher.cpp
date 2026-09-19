@@ -9,6 +9,7 @@
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 #include "Failsafe/Failsafe.h"
+#include "BootIdentity/BootIdentity.h"
 #include "Config/config.h"
 #include "Network/NetworkGate.h"
 
@@ -276,6 +277,7 @@ void publishSensors(const SensorData &data)
     if (queue == nullptr) return;
     Message message{};
     message.topic = Message::Topic::Sensor;
+    const uint32_t sequenceNumber = BootIdentity::nextSequenceNumber();
 
     char tdsBuf[16], tempBuf[16], distBuf[16], phUpBuf[8];
     char nutrientABuf[8], nutrientBBuf[8], phDownBuf[8];
@@ -325,10 +327,13 @@ void publishSensors(const SensorData &data)
     else strlcpy(flowVolumeBuf, "null", sizeof(flowVolumeBuf));
 
     snprintf(message.payload, sizeof(message.payload),
-             "{\"payload\":[{\"sensors\":{\"water_temp\":%s,\"ph\":%s,\"tds\":%s,"
+             "{\"payload\":[{\"boot_id\":%lu,\"sequence_number\":%lu,"
+             "\"sensors\":{\"water_temp\":%s,\"ph\":%s,\"tds\":%s,"
              "\"turbidity_voltage\":%s,\"turbidity_status\":%s,\"distance\":%s,\"light\":%s,\"ph_up_level\":%s,"
              "\"nutrient_a_level\":%s,\"nutrient_b_level\":%s,\"ph_down_level\":%s,"
              "\"flow_rate_lpm\":%s,\"flow_volume_l\":%s}}]}",
+             static_cast<unsigned long>(BootIdentity::bootId()),
+             static_cast<unsigned long>(sequenceNumber),
              tempBuf, phBuf, tdsBuf, turbVoltageBuf, turbStatusBuf, distBuf, lightBuf, phUpBuf,
              nutrientABuf, nutrientBBuf, phDownBuf, flowRateBuf, flowVolumeBuf);
 
