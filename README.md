@@ -9,7 +9,8 @@ Project prototipe monitoring dan otomasi hidroponik menggunakan ESP32-S3, Arduin
 - Pengiriman data MQTT saat nilai berubah melewati threshold atau melalui heartbeat 60 detik.
 - Konfigurasi WiFi melalui portal WiFiManager.
 - Kontrol 8 channel relay melalui 74HC595 dan antrean perintah MQTT.
-- Relay hanya dikontrol melalui perintah MQTT; float switch tidak mengubah relay.
+- Decision rule tetap berada di edge device. ESP32 hanya mengirim telemetry,
+  menerima command, dan menjalankan pembatasan failsafe lokal.
 - TFT ILI9488 memakai SPI 20 MHz dan readback SDO/MISO pada GPIO15; re-inisialisasi
   controller hanya dilakukan saat pemeriksaan status gagal tanpa me-reset ESP32.
 - Tampilan TFT memiliki dua halaman bergaya telemetry: halaman angka untuk seluruh
@@ -118,6 +119,7 @@ Broker yang dikonfigurasi adalah `192.168.1.75:1883`. Topic menggunakan prefix `
 | Kekeruhan | `uji-prototype/sensor/turbidity` |
 | pH | `uji-prototype/sensor/ph` |
 | Perintah relay | `farming/ESP32-HYDROPONIC-01/hydroponic/control` |
+| Heartbeat edge device | `farming/ESP32-HYDROPONIC-01/hydroponic/heartbeat` |
 | Status relay | `uji-prototype/relay/status` |
 | Konfigurasi sistem | `uji-prototype/system/config` |
 | Target TDS | `uji-prototype/config/tds` |
@@ -131,11 +133,27 @@ Untuk menjalankan otomasi:
 3. Atur global context `tanggal_tanam` dengan format `YYYY-MM-DD`.
 4. Deploy flow dan pastikan konfigurasi sistem, TDS, serta pH diterima melalui topic retained sebelum menggunakan otomasi dosing.
 
-Contoh payload perintah relay:
+Contoh payload perintah relay dengan failsafe:
 
 ```json
-{"relay":1,"state":true}
+{"relay":1,"state":true,"duration_ms":30000}
 ```
+
+Command `ON` wajib memiliki heartbeat edge device yang masih aktif dan semua
+float switch harus normal. Jika `duration_ms` tidak dikirim, firmware memakai
+30 detik; batas maksimum command adalah 10 menit. Command `OFF` dan emergency
+stop tetap diterima untuk mematikan aktuator:
+
+```json
+{"relay":1,"state":false}
+{"emergency_stop":true}
+```
+
+Heartbeat dapat memakai payload sederhana seperti `{"alive":true}` dan harus
+diterbitkan lebih cepat dari 10 detik. Jika heartbeat hilang, float switch
+tidak aman, command melewati durasi, atau task output hang, relay masuk safe
+OFF. Proteksi fuse/MCB/thermal dan emergency-stop fisik tetap merupakan
+lapisan hardware eksternal.
 
 Broker publik dan prefix topic bersama tidak memberikan isolasi perangkat. Untuk penggunaan nyata, sesuaikan broker, akses, dan topic dengan instalasi sendiri.
 
@@ -174,6 +192,7 @@ src/
   Ultrasonic/      Sensor jarak
   LightSensor/     Sensor cahaya
   Relay/           Kontrol relay
+  Failsafe/        Guard command, heartbeat, duration, dan watchdog
   main.cpp         Startup dan output data
 include/           Header dan template credential
 node-red/          Flow otomasi

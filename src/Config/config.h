@@ -112,6 +112,14 @@ extern const uint8_t ALL_ON_MASK;
 extern const uint8_t COMMAND_QUEUE_LENGTH;
 }
 
+namespace Failsafe {
+extern const uint32_t DEFAULT_COMMAND_DURATION_MS;
+extern const uint32_t MAX_COMMAND_DURATION_MS;
+extern const uint32_t HEARTBEAT_TIMEOUT_MS;
+extern const uint32_t CHECK_INTERVAL_MS;
+extern const uint32_t WATCHDOG_TIMEOUT_S;
+}
+
 namespace Output {
 extern const float TDS_CHANGE_THRESHOLD;
 extern const float TEMPERATURE_CHANGE_THRESHOLD;
@@ -131,6 +139,7 @@ extern const char HOST[];
 extern const uint16_t PORT;
 extern const char SENSOR_TOPIC[];
 extern const char CONTROL_TOPIC[];
+extern const char HEARTBEAT_TOPIC[];
 // Topik konfigurasi dinonaktifkan sementara:
 // extern const char SYSTEM_CONFIG_TOPIC[];
 // extern const char TDS_CONFIG_TOPIC[];

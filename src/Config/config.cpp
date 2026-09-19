@@ -123,6 +123,16 @@ const uint8_t ALL_ON_MASK = 0xFF;
 const uint8_t COMMAND_QUEUE_LENGTH = 16;
 }
 
+namespace Failsafe {
+// Command ON tanpa duration_ms dibatasi agar aktuator tidak latch permanen.
+const uint32_t DEFAULT_COMMAND_DURATION_MS = 30000;
+const uint32_t MAX_COMMAND_DURATION_MS = 600000;
+// Edge device wajib mengirim heartbeat lebih cepat dari timeout ini.
+const uint32_t HEARTBEAT_TIMEOUT_MS = 10000;
+const uint32_t CHECK_INTERVAL_MS = 100;
+const uint32_t WATCHDOG_TIMEOUT_S = 5;
+}
+
 namespace Output {
 const float TDS_CHANGE_THRESHOLD = 0.1f;
 const float TEMPERATURE_CHANGE_THRESHOLD = 0.01f;
@@ -142,6 +152,7 @@ const char HOST[] = "192.168.1.75";
 const uint16_t PORT = 1883;
 const char SENSOR_TOPIC[] = "farming/ESP32-HYDROPONIC-01/hydroponic/data";
 const char CONTROL_TOPIC[] = "farming/ESP32-HYDROPONIC-01/hydroponic/control";
+const char HEARTBEAT_TOPIC[] = "farming/ESP32-HYDROPONIC-01/hydroponic/heartbeat";
 // Topik konfigurasi dinonaktifkan sementara:
 // const char SYSTEM_CONFIG_TOPIC[] = "sumenep/hydroponic/system/config";
 // const char TDS_CONFIG_TOPIC[] = "sumenep/hydroponic/config/tds";
@@ -151,7 +162,7 @@ const char USERNAME[] = HYDRO_MQTT_USERNAME;
 const char PASSWORD[] = HYDRO_MQTT_PASSWORD;
 const char WIFI_AP_NAME[] = "TDS-MQTT-Setup";
 const char WIFI_AP_PASSWORD[] = HYDRO_WIFI_AP_PASSWORD;
-const char CLIENT_ID_PREFIX[] = "ESP32-TDS";
+const char CLIENT_ID_PREFIX[] = "ESP32-HYDRO";
 const uint16_t BUFFER_SIZE = 512;
 const uint16_t WIFI_PORTAL_TIMEOUT_S = 180;
 const uint8_t PUBLISH_QUEUE_LENGTH = 8;

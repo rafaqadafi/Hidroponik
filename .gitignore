@@ -4,9 +4,13 @@
 .vscode/launch.json
 .vscode/ipch
 /include/secrets.h
+/include/README
+/include/README.md
 /platformio_override.ini
 /AGENTS.md
 /hardware/
+/calibration/
+/node-red/
 
 # Obsidian local vault metadata
 .obsidian/

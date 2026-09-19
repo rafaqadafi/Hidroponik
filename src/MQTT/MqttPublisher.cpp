@@ -8,7 +8,7 @@
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
-#include "Relay/Relay.h"
+#include "Failsafe/Failsafe.h"
 #include "Config/config.h"
 #include "Network/NetworkGate.h"
 
@@ -41,6 +41,7 @@ void setMqttConnected(bool connected)
     portENTER_CRITICAL(&mqttStateMux);
     mqttConnected = connected;
     portEXIT_CRITICAL(&mqttStateMux);
+    Failsafe::setMqttConnected(connected);
 }
 
 bool getMqttConnected()
@@ -163,40 +164,17 @@ void receivePhConfig(const String &json)
 
 void mqttCallback(char *topic, byte *payload, unsigned int length)
 {
-    char message[256];
-    if (length >= sizeof(message)) {
-        Serial.println("MQTT payload relay terlalu panjang");
-        return;
-    }
-    memcpy(message, payload, length);
-    message[length] = '\0';
-
-    const String command(message);
-    const bool isControlTopic =
-        strcmp(topic, Config::Mqtt::CONTROL_TOPIC) == 0;
-    if (!isControlTopic) return;
-
-    const int relayKey = command.indexOf("\"relay\":");
-    const int stateKey = command.indexOf("\"state\":");
-    if (relayKey < 0 || stateKey < 0) {
-        Serial.println("MQTT relay command tidak valid");
+    if (strcmp(topic, Config::Mqtt::HEARTBEAT_TOPIC) == 0) {
+        Failsafe::handleHeartbeat();
         return;
     }
 
-    const int relayNumber = command.substring(relayKey + 8).toInt();
-    const bool stateOn = command.indexOf("true", stateKey + 8) >= 0;
-    const bool stateOff = command.indexOf("false", stateKey + 8) >= 0;
-    if ((!stateOn && !stateOff) || relayNumber < 0 ||
-        relayNumber > Config::Relay::CHANNEL_COUNT) {
-        Serial.println("MQTT relay command tidak valid");
-        return;
+    if (strcmp(topic, Config::Mqtt::CONTROL_TOPIC) == 0) {
+        const bool accepted = Failsafe::handleControlPayload(
+            reinterpret_cast<const char *>(payload), length);
+        Serial.println(accepted ? "MQTT failsafe command diterima"
+                                : "MQTT failsafe command ditolak");
     }
-
-    const bool accepted = relayNumber == 0
-        ? (stateOn ? Relay::allOn() : Relay::allOff())
-        : Relay::setRelay(static_cast<uint8_t>(relayNumber), stateOn);
-    Serial.println(accepted ? "MQTT relay command diterima"
-                            : "MQTT relay command gagal masuk antrean");
 }
 
 void task(void *)
@@ -246,9 +224,11 @@ void task(void *)
                 Serial.println("MQTT terhubung");
                 const bool controlSubscribed =
                     mqttClient.subscribe(Config::Mqtt::CONTROL_TOPIC);
-                Serial.printf("MQTT kontrol relay: %s\n",
-                              controlSubscribed
-                                  ? "AKTIF" : "GAGAL");
+                const bool heartbeatSubscribed =
+                    mqttClient.subscribe(Config::Mqtt::HEARTBEAT_TOPIC);
+                Serial.printf("MQTT failsafe control: %s | heartbeat: %s\n",
+                              controlSubscribed ? "AKTIF" : "GAGAL",
+                              heartbeatSubscribed ? "AKTIF" : "GAGAL");
                 // Subscription konfigurasi dinonaktifkan sementara:
                 // mqttClient.subscribe(Config::Mqtt::SYSTEM_CONFIG_TOPIC);
                 // mqttClient.subscribe(Config::Mqtt::TDS_CONFIG_TOPIC);

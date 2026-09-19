@@ -17,9 +17,12 @@
 #include "Config/config.h"
 #include "Network/NetworkGate.h"
 #include "Display/Display.h"
+#include "Failsafe/Failsafe.h"
 
 void outputTask(void *)
 {
+    Failsafe::attachWatchdog();
+
     TickType_t lastSensorPublish = 0;
     TickType_t lastStatusPublish = 0;
     float lastPublishedTds = 0.0f;
@@ -54,7 +57,8 @@ void outputTask(void *)
     TickType_t lastSerialPrint = 0;
 
     while (true) {
-        if (!NetworkGate::waitUntilConnected()) {
+        if (!NetworkGate::waitUntilConnected(pdMS_TO_TICKS(1000))) {
+            Failsafe::feedWatchdog();
             vTaskDelay(pdMS_TO_TICKS(Config::Output::TASK_INTERVAL_MS));
             continue;
         }
@@ -81,6 +85,9 @@ void outputTask(void *)
             const bool phDownNormal =
                 LevelSwitch::isNormal(LevelSwitch::Id::PhDown);
             const bool phDownValid = true;
+            Failsafe::updateLocalSafety(
+                phUpNormal && nutrientANormal && nutrientBNormal &&
+                phDownNormal);
             Buzzer::setLiquidEmpty(!phUpNormal);
             float flowRateLpm = 0.0f;
             float flowVolumeLiters = 0.0f;
@@ -298,6 +305,7 @@ void outputTask(void *)
                 relayStatePublished = true;
             }
         }
+        Failsafe::feedWatchdog();
         vTaskDelay(pdMS_TO_TICKS(Config::Output::TASK_INTERVAL_MS));
     }
 }
@@ -351,6 +359,12 @@ void setup()
     }
     if (!LevelSwitch::begin()) {
         Serial.println("ERROR: Modul level switch gagal dimulai");
+    }
+    if (!Failsafe::begin()) {
+        Serial.println("ERROR: Modul failsafe gagal dimulai");
+    } else {
+        Failsafe::setMqttConnected(MqttPublisher::isConnected());
+        Serial.println("Failsafe: READY");
     }
     if (!FlowSensor::begin()) {
         Serial.println("ERROR: Modul flow sensor gagal dimulai");

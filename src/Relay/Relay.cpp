@@ -18,11 +18,14 @@ struct Command {
     CommandType type;
     uint8_t relayNumber;
     bool on;
+    uint32_t generation;
 };
 
 QueueHandle_t commandQueue = nullptr;
 SemaphoreHandle_t stateMutex = nullptr;
 uint8_t relayState = 0;
+uint32_t commandGeneration = 0;
+bool safetyLocked = false;
 bool ready = false;
 
 void writeShiftRegister(uint8_t logicalState)
@@ -48,6 +51,11 @@ void task(void *)
         if (!NetworkGate::waitUntilConnected()) continue;
 
         xSemaphoreTake(stateMutex, portMAX_DELAY);
+        if (command.generation != commandGeneration ||
+            (safetyLocked && command.on)) {
+            xSemaphoreGive(stateMutex);
+            continue;
+        }
         if (command.type == CommandType::SetAll) {
             relayState = command.on ? Config::Relay::ALL_ON_MASK : 0x00;
         } else {
@@ -69,7 +77,14 @@ void task(void *)
 
 bool send(const Command &command)
 {
-    return ready && xQueueSend(commandQueue, &command, 0) == pdTRUE;
+    if (!ready || stateMutex == nullptr) return false;
+
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+    Command queued = command;
+    queued.generation = commandGeneration;
+    const bool accepted = xQueueSend(commandQueue, &queued, 0) == pdTRUE;
+    xSemaphoreGive(stateMutex);
+    return accepted;
 }
 
 }
@@ -88,6 +103,8 @@ bool begin()
     digitalWrite(Config::Pins::RELAY_RCLK, HIGH);
 
     relayState = 0x00;
+    commandGeneration = 0;
+    safetyLocked = false;
     writeShiftRegister(relayState);
 
     commandQueue = xQueueCreate(Config::Relay::COMMAND_QUEUE_LENGTH,
@@ -120,6 +137,33 @@ bool allOff()
 bool allOn()
 {
     return send({CommandType::SetAll, 0, true});
+}
+
+bool failsafeAllOff()
+{
+    if (!ready || stateMutex == nullptr) return false;
+
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+    ++commandGeneration;
+    safetyLocked = true;
+    relayState = 0x00;
+    writeShiftRegister(relayState);
+    xSemaphoreGive(stateMutex);
+
+    Command discarded{};
+    while (xQueueReceive(commandQueue, &discarded, 0) == pdTRUE) {
+    }
+    return true;
+}
+
+bool releaseFailsafe()
+{
+    if (!ready || stateMutex == nullptr) return false;
+
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+    safetyLocked = false;
+    xSemaphoreGive(stateMutex);
+    return true;
 }
 
 uint8_t getState()
