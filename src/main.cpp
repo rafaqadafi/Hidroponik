@@ -18,13 +18,13 @@
 #include "Network/NetworkGate.h"
 #include "Display/Display.h"
 #include "Failsafe/Failsafe.h"
+#include "Logic/Logic.h"
 
 void outputTask(void *)
 {
     Failsafe::attachWatchdog();
 
     TickType_t lastSensorPublish = 0;
-    TickType_t lastStatusPublish = 0;
     float lastPublishedTds = 0.0f;
     float lastPublishedTemperature = 0.0f;
     float lastPublishedDistance = 0.0f;
@@ -52,8 +52,9 @@ void outputTask(void *)
     bool lastTurbidityCloudy = false;
     bool lastTurbidityDirty = false;
     bool lastPhValid = false;
-    uint8_t lastRelayState = 0;
-    bool relayStatePublished = false;
+    uint8_t lastActuatorMask = 0;
+    Logic::State lastLogicState = Logic::State::Init;
+    bool actuatorsPublished = false;
     TickType_t lastSerialPrint = 0;
 
     while (true) {
@@ -88,7 +89,6 @@ void outputTask(void *)
             Failsafe::updateLocalSafety(
                 phUpNormal && nutrientANormal && nutrientBNormal &&
                 phDownNormal);
-            Buzzer::setLiquidEmpty(!phUpNormal);
             float flowRateLpm = 0.0f;
             float flowVolumeLiters = 0.0f;
             const bool flowValid = FlowSensor::getReading(
@@ -104,6 +104,36 @@ void outputTask(void *)
                 TurbiditySensor::isDirtyWater(turbidityVoltage);
             const bool phValid = temperatureValid && PhSensor::isReady();
             const float ph = phValid ? PhSensor::getPh(temperature) : 0.0f;
+
+            const Logic::Inputs logicInputs{
+                temperature,
+                temperatureValid,
+                ph,
+                phValid,
+                ppm,
+                tdsValid,
+                turbidityVoltage,
+                turbidityValid,
+                turbidityCloudy,
+                turbidityDirty,
+                lightLux,
+                lightValid,
+                distanceCm,
+                distanceValid,
+                flowRateLpm,
+                flowValid,
+                phUpNormal,
+                nutrientANormal,
+                nutrientBNormal,
+                phDownNormal,
+                false
+            };
+            const Logic::ActuatorState actuatorState =
+                Logic::evaluate(logicInputs);
+            Logic::applyActuators(actuatorState);
+            Buzzer::setLiquidEmpty(!phUpNormal ||
+                                   actuatorState.buzzerTemperature ||
+                                   actuatorState.buzzerFault);
 
             Display::SensorViewData viewData{
                 temperature,
@@ -222,6 +252,12 @@ void outputTask(void *)
             const bool phChanged = phValid &&
                 fabsf(ph - lastPublishedPh) >= Config::Output::PH_CHANGE_THRESHOLD;
             const bool tdsRequested = MqttPublisher::takeTdsRequest();
+            const uint8_t currentActuatorMask =
+                Logic::actuatorMask(actuatorState);
+            const bool actuatorChanged =
+                !actuatorsPublished ||
+                currentActuatorMask != lastActuatorMask ||
+                actuatorState.state != lastLogicState;
 
             const bool validityChanged = (tdsValid != lastTdsValid) ||
                                          (temperatureValid != lastTemperatureValid) ||
@@ -241,7 +277,8 @@ void outputTask(void *)
                                       phDownChanged || flowRateChanged ||
                                       flowVolumeChanged ||
                                       lightChanged || turbidityChanged ||
-                                      turbidityStatusChanged || phChanged;
+                                      turbidityStatusChanged || phChanged ||
+                                      actuatorChanged;
 
             if (!sensorsPublished || tdsRequested || validityChanged ||
                 valueChanged ||
@@ -260,7 +297,8 @@ void outputTask(void *)
                     nutrientBNormal, nutrientBValid,
                     phDownNormal, phDownValid,
                     flowRateLpm, flowValid,
-                    flowVolumeLiters, flowValid
+                    flowVolumeLiters, flowValid,
+                    actuatorState
                 };
                 MqttPublisher::publishSensors(sensorData);
                 lastPublishedTds = ppm;
@@ -289,22 +327,13 @@ void outputTask(void *)
                 lastTurbidityCloudy = turbidityCloudy;
                 lastTurbidityDirty = turbidityDirty;
                 lastPhValid = phValid;
+                lastActuatorMask = currentActuatorMask;
+                lastLogicState = actuatorState.state;
+                actuatorsPublished = true;
                 lastSensorPublish = now;
                 sensorsPublished = true;
             }
 
-        // Status relay di MQTT dinonaktifkan sementara.
-        if (Relay::isReady()) {
-            const uint8_t relayState = Relay::getState();
-            if (!relayStatePublished || relayState != lastRelayState ||
-                now - lastStatusPublish >=
-                    pdMS_TO_TICKS(Config::Output::MQTT_HEARTBEAT_MS)) {
-                // MqttPublisher::publishStatus(relayState);
-                lastRelayState = relayState;
-                lastStatusPublish = now;
-                relayStatePublished = true;
-            }
-        }
         Failsafe::feedWatchdog();
         vTaskDelay(pdMS_TO_TICKS(Config::Output::TASK_INTERVAL_MS));
     }
@@ -364,7 +393,13 @@ void setup()
         Serial.println("ERROR: Modul failsafe gagal dimulai");
     } else {
         Failsafe::setMqttConnected(MqttPublisher::isConnected());
+        Failsafe::setLocalControl(true);
         Serial.println("Failsafe: READY");
+    }
+    if (!Logic::begin()) {
+        Serial.println("ERROR: Modul logic lokal gagal dimulai");
+    } else {
+        Serial.println("Logic lokal: READY");
     }
     if (!FlowSensor::begin()) {
         Serial.println("ERROR: Modul flow sensor gagal dimulai");

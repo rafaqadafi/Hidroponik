@@ -1,6 +1,6 @@
 # Sistem Monitoring Hidroponik ESP32-S3
 
-Project prototipe monitoring dan otomasi hidroponik menggunakan ESP32-S3, Arduino, PlatformIO, MQTT, dan Node-RED. ESP32 membaca sensor serta menerima perintah relay, sedangkan Node-RED mengelola target nutrisi dan pH berdasarkan fase pertumbuhan tanaman.
+Project prototipe monitoring dan otomasi hidroponik menggunakan ESP32-S3, Arduino, PlatformIO, dan MQTT. Pada branch uji coba ini ESP32 membaca sensor sekaligus menjalankan logic threshold lokal; MQTT hanya mengirim telemetry dan status aktuator untuk dipantau komputer edge.
 
 ## Fitur
 
@@ -8,9 +8,13 @@ Project prototipe monitoring dan otomasi hidroponik menggunakan ESP32-S3, Arduin
   empat float switch, serta debit dan volume air.
 - Pengiriman data MQTT saat nilai berubah melewati threshold atau melalui heartbeat 60 detik.
 - Konfigurasi WiFi melalui portal WiFiManager.
-- Kontrol 8 channel relay melalui 74HC595 dan antrean perintah MQTT.
-- Decision rule tetap berada di edge device. ESP32 hanya mengirim telemetry,
-  menerima command, dan menjalankan pembatasan failsafe lokal.
+- Kontrol 8 channel relay melalui 74HC595 dari modul `src/Logic`.
+- Mapping aktuator bernama: `ph_up_pump`, `ph_down_pump`, `nutrient_pump`,
+  `water_pump`, `solenoid_valve`, `grow_light`, dan `aerator`.
+- MQTT publish-only pada branch uji coba ini. ESP32 mengirim sensor, tegangan
+  turbidity, status logic, dan kondisi aktuator; tidak menerima command relay.
+- Failsafe lokal tetap menjaga float switch, safe-off, durasi internal, dan
+  hardware watchdog.
 - TFT ILI9488 memakai SPI 20 MHz dan readback SDO/MISO pada GPIO15; re-inisialisasi
   controller hanya dilakukan saat pemeriksaan status gagal tanpa me-reset ESP32.
 - Tampilan TFT memiliki dua halaman bergaya telemetry: halaman angka untuk seluruh
@@ -18,7 +22,7 @@ Project prototipe monitoring dan otomasi hidroponik menggunakan ESP32-S3, Arduin
   berganti otomatis setiap 10 detik dan menyimpan 48 sampel terakhir.
 - Task FreeRTOS dengan mutex untuk berbagi data dan akses I2C.
 - Konfigurasi pin dan parameter operasional terpusat.
-- Otomasi dosing nutrisi dan pH melalui flow Node-RED.
+- Logic lokal dibuat sementara agar mudah dipindahkan ke komputer edge pada tahap berikutnya.
 
 ## Hardware dan pemetaan pin
 
@@ -106,54 +110,47 @@ Jika task jaringan mendeteksi WiFi putus, `NetworkGate` ditutup. Task aplikasi m
 
 ADS1115 yang tidak ditemukan tidak menghentikan startup jaringan. Sensor yang bergantung pada ADS1115 tidak dijalankan, sementara modul lainnya tetap dapat berjalan setelah gerbang jaringan terbuka.
 
-## MQTT dan Node-RED
+## MQTT
 
-Broker yang dikonfigurasi adalah `192.168.1.75:1883`. Topic menggunakan prefix `uji-prototype`.
+Broker yang dikonfigurasi adalah `192.168.1.75:1883`.
 
 | Fungsi | Topic |
 | --- | --- |
-| TDS | `uji-prototype/sensor/tds` |
-| Suhu | `uji-prototype/sensor/temperature` |
-| Jarak | `uji-prototype/sensor/distance` |
-| Cahaya | `uji-prototype/sensor/light` |
-| Kekeruhan | `uji-prototype/sensor/turbidity` |
-| pH | `uji-prototype/sensor/ph` |
-| Perintah relay | `farming/ESP32-HYDROPONIC-01/hydroponic/control` |
-| Heartbeat edge device | `farming/ESP32-HYDROPONIC-01/hydroponic/heartbeat` |
-| Status relay | `uji-prototype/relay/status` |
-| Konfigurasi sistem | `uji-prototype/system/config` |
-| Target TDS | `uji-prototype/config/tds` |
-| Target pH | `uji-prototype/config/ph` |
-| Permintaan pembacaan | `uji-prototype/sensor/request` |
+| Telemetry sensor, logic, dan aktuator | `farming/ESP32-HYDROPONIC-01/hydroponic/data` |
+| Control relay (disiapkan untuk migrasi edge) | `farming/ESP32-HYDROPONIC-01/hydroponic/control` |
+| Heartbeat edge (disiapkan untuk migrasi edge) | `farming/ESP32-HYDROPONIC-01/hydroponic/heartbeat` |
 
-Untuk menjalankan otomasi:
-
-1. Import [flow_hidroponik_modular.json](node-red/flow_hidroponik_modular.json) ke Node-RED.
-2. Periksa konfigurasi broker dan topic agar sesuai firmware.
-3. Atur global context `tanggal_tanam` dengan format `YYYY-MM-DD`.
-4. Deploy flow dan pastikan konfigurasi sistem, TDS, serta pH diterima melalui topic retained sebelum menggunakan otomasi dosing.
-
-Contoh payload perintah relay dengan failsafe:
+Payload telemetry memiliki sensor dan status aktuator bernama dalam satu pesan. Contoh bentuknya:
 
 ```json
-{"relay":1,"state":true,"duration_ms":30000}
+{
+  "payload": [{
+    "sensors": {
+      "ph": 6.4,
+      "tds": 500,
+      "turbidity_voltage": 2.75,
+      "turbidity_status": "cloudy"
+    },
+    "actuators": {
+      "ph_up_pump": 0,
+      "ph_down_pump": 0,
+      "nutrient_pump": 1,
+      "water_pump": 0,
+      "solenoid_valve": 0,
+      "grow_light": 1,
+      "aerator": 1
+    }
+  }]
+}
 ```
 
-Command `ON` wajib memiliki heartbeat edge device yang masih aktif dan semua
-float switch harus normal. Jika `duration_ms` tidak dikirim, firmware memakai
-30 detik; batas maksimum command adalah 10 menit. Command `OFF` dan emergency
-stop tetap diterima untuk mematikan aktuator:
+Turbidity mengirim `turbidity_voltage` dalam volt dan status `clear`, `cloudy`,
+atau `dirty`. Status `dirty` tidak mematikan logic; tegangan tetap disertakan
+agar kondisi sensor dapat diperiksa dari telemetry.
 
-```json
-{"relay":1,"state":false}
-{"emergency_stop":true}
-```
-
-Heartbeat dapat memakai payload sederhana seperti `{"alive":true}` dan harus
-diterbitkan lebih cepat dari 10 detik. Jika heartbeat hilang, float switch
-tidak aman, command melewati durasi, atau task output hang, relay masuk safe
-OFF. Proteksi fuse/MCB/thermal dan emergency-stop fisik tetap merupakan
-lapisan hardware eksternal.
+Pada tahap migrasi edge, komputer lokal dapat subscribe topic telemetry tersebut
+dan kemudian mengambil alih decision rule. Topic control dan heartbeat tetap
+dicadangkan untuk mode edge berikutnya, tetapi belum disubscribe firmware branch ini.
 
 Broker publik dan prefix topic bersama tidak memberikan isolasi perangkat. Untuk penggunaan nyata, sesuaikan broker, akses, dan topic dengan instalasi sendiri.
 
@@ -164,7 +161,7 @@ Broker publik dan prefix topic bersama tidak memberikan isolasi perangkat. Untuk
 - Kalibrasi TDS dan pH berada dalam `*Sensor.cpp` masing-masing. Turbidity memakai threshold tegangan di `src/Config/config.cpp` tanpa konversi NTU.
 - Kalibrasi ultrasonik tetap berada di [UltrasonicSensor.cpp](src/Ultrasonic/UltrasonicSensor.cpp). Rentang valid firmware saat ini 20–600 cm; ini bukan jaminan spesifikasi semua varian sensor.
 
-Turbidity tidak dikonversi ke NTU karena pembacaan dipengaruhi cahaya sekitar dan posisi sensor. Firmware memakai hasil kalibrasi tegangan ADS1115 A1: referensi air jernih `Config::Turbidity::CLEAR_WATER_THRESHOLD_VOLTAGE = 2.9533 V`, sedangkan tegangan di bawah `Config::Turbidity::CLOUDY_WATER_REFERENCE_VOLTAGE = 2.6015 V` diklasifikasikan sebagai `AIR KOTOR` dan ditampilkan pada kartu TFT. Tegangan yang sama atau lebih tinggi diberi status `NORMAL`. MQTT mengirim `turbidity_voltage` dalam volt dan `turbidity_status` (`dirty` atau `normal`).
+Turbidity tidak dikonversi ke NTU karena pembacaan dipengaruhi cahaya sekitar dan posisi sensor. Firmware memakai hasil kalibrasi tegangan ADS1115 A1: referensi air jernih `Config::Turbidity::CLEAR_WATER_THRESHOLD_VOLTAGE = 2.9533 V`, sedangkan tegangan di bawah `Config::Turbidity::CLOUDY_WATER_REFERENCE_VOLTAGE = 2.6015 V` diklasifikasikan sebagai `AIR KOTOR`. Rentang di antara kedua threshold diklasifikasikan sebagai `AIR KERUH`. MQTT mengirim tegangan dan status tersebut.
 
 Perhitungan flow menggunakan konstanta datasheet sekitar 450 pulsa per liter pada `Config::Flow::PULSES_PER_LITER`.
 
@@ -192,11 +189,10 @@ src/
   Ultrasonic/      Sensor jarak
   LightSensor/     Sensor cahaya
   Relay/           Kontrol relay
-  Failsafe/        Guard command, heartbeat, duration, dan watchdog
+  Logic/           FSM threshold lokal dan mapping aktuator sementara
+  Failsafe/        Safe-off, float switch, dan watchdog
   main.cpp         Startup dan output data
 include/           Header dan template credential
-node-red/          Flow otomasi
-calibration/       Catatan kalibrasi
 test/              Sketch kalibrasi mandiri
 ```
 

@@ -16,6 +16,7 @@ void handleHeartbeat();
 
 // Transport MQTT dan status local safety dipasok oleh task aplikasi.
 void setMqttConnected(bool connected);
+void setLocalControl(bool enabled);
 void updateLocalSafety(bool allFloatsNormal);
 
 // Watchdog task aplikasi: jika outputTask hang, hardware watchdog mereset ESP32.

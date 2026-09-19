@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "Logic/Logic.h"
 
 struct SystemConfig {
     uint16_t day;
@@ -45,6 +46,7 @@ struct SensorData {
     bool flowRateValid;
     float flowVolumeLiters;
     bool flowVolumeValid;
+    Logic::ActuatorState actuators;
 };
 
 bool begin();

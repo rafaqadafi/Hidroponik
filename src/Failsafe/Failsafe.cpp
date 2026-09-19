@@ -18,6 +18,7 @@ uint32_t relayDeadlineMs[MAX_RELAY_CHANNELS + 1] = {};
 uint32_t lastHeartbeatMs = 0;
 bool heartbeatReceived = false;
 bool mqttConnected = false;
+bool localControlEnabled = false;
 bool localSafetySafe = false;
 bool safeStateApplied = false;
 bool watchdogAttached = false;
@@ -51,6 +52,7 @@ bool readNumber(const String &json, const char *key, float &value)
 
 bool communicationHealthyLocked(uint32_t now)
 {
+    if (localControlEnabled) return true;
     return mqttConnected && heartbeatReceived &&
            now - lastHeartbeatMs <= Config::Failsafe::HEARTBEAT_TIMEOUT_MS;
 }
@@ -158,6 +160,7 @@ bool begin()
     lastHeartbeatMs = 0;
     heartbeatReceived = false;
     mqttConnected = false;
+    localControlEnabled = false;
     localSafetySafe = false;
     safeStateApplied = false;
 
@@ -183,22 +186,46 @@ void handleHeartbeat()
 
 void setMqttConnected(bool connected)
 {
+    bool localMode = false;
     if (stateMutex == nullptr) return;
     xSemaphoreTake(stateMutex, portMAX_DELAY);
     mqttConnected = connected;
+    localMode = localControlEnabled;
     xSemaphoreGive(stateMutex);
 
-    if (!connected) requestSafeOff();
+    if (!connected && !localMode) requestSafeOff();
+}
+
+void setLocalControl(bool enabled)
+{
+    bool safetySafe = false;
+    if (stateMutex == nullptr) return;
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+    localControlEnabled = enabled;
+    safetySafe = localSafetySafe;
+    xSemaphoreGive(stateMutex);
+
+    if (!enabled) {
+        requestSafeOff();
+    } else if (safetySafe) {
+        Relay::releaseFailsafe();
+    }
 }
 
 void updateLocalSafety(bool allFloatsNormal)
 {
+    bool localMode = false;
     if (stateMutex == nullptr) return;
     xSemaphoreTake(stateMutex, portMAX_DELAY);
     localSafetySafe = allFloatsNormal;
+    localMode = localControlEnabled;
     xSemaphoreGive(stateMutex);
 
-    if (!allFloatsNormal) requestSafeOff();
+    if (!allFloatsNormal) {
+        requestSafeOff();
+    } else if (localMode) {
+        Relay::releaseFailsafe();
+    }
 }
 
 bool handleControlPayload(const char *payload, size_t length)

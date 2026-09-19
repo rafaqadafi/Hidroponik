@@ -19,7 +19,7 @@ struct Message {
         Sensor,
         Status
     } topic;
-    char payload[512];
+    char payload[1024];
 };
 
 WiFiClient wifiClient;
@@ -162,21 +162,6 @@ void receivePhConfig(const String &json)
                   minimum, maximum, target);
 }
 
-void mqttCallback(char *topic, byte *payload, unsigned int length)
-{
-    if (strcmp(topic, Config::Mqtt::HEARTBEAT_TOPIC) == 0) {
-        Failsafe::handleHeartbeat();
-        return;
-    }
-
-    if (strcmp(topic, Config::Mqtt::CONTROL_TOPIC) == 0) {
-        const bool accepted = Failsafe::handleControlPayload(
-            reinterpret_cast<const char *>(payload), length);
-        Serial.println(accepted ? "MQTT failsafe command diterima"
-                                : "MQTT failsafe command ditolak");
-    }
-}
-
 void task(void *)
 {
     WiFi.mode(WIFI_STA);
@@ -185,7 +170,6 @@ void task(void *)
 
     mqttClient.setServer(Config::Mqtt::HOST, Config::Mqtt::PORT);
     mqttClient.setBufferSize(Config::Mqtt::BUFFER_SIZE);
-    mqttClient.setCallback(mqttCallback);
     wifiManager.setConfigPortalTimeout(Config::Mqtt::WIFI_PORTAL_TIMEOUT_S);
 
     char clientId[32];
@@ -222,18 +206,7 @@ void task(void *)
             if (connected) {
                 setMqttConnected(true);
                 Serial.println("MQTT terhubung");
-                const bool controlSubscribed =
-                    mqttClient.subscribe(Config::Mqtt::CONTROL_TOPIC);
-                const bool heartbeatSubscribed =
-                    mqttClient.subscribe(Config::Mqtt::HEARTBEAT_TOPIC);
-                Serial.printf("MQTT failsafe control: %s | heartbeat: %s\n",
-                              controlSubscribed ? "AKTIF" : "GAGAL",
-                              heartbeatSubscribed ? "AKTIF" : "GAGAL");
-                // Subscription konfigurasi dinonaktifkan sementara:
-                // mqttClient.subscribe(Config::Mqtt::SYSTEM_CONFIG_TOPIC);
-                // mqttClient.subscribe(Config::Mqtt::TDS_CONFIG_TOPIC);
-                // mqttClient.subscribe(Config::Mqtt::PH_CONFIG_TOPIC);
-                // mqttClient.subscribe(Config::Mqtt::SENSOR_REQUEST_TOPIC);
+                Serial.println("MQTT mode: publish telemetry saja");
             } else {
                 Serial.printf("MQTT gagal, state: %d\n", mqttClient.state());
                 vTaskDelay(pdMS_TO_TICKS(Config::Mqtt::RECONNECT_DELAY_MS));
@@ -309,7 +282,8 @@ void publishSensors(const SensorData &data)
     if (data.turbidityValid) {
         snprintf(turbVoltageBuf, sizeof(turbVoltageBuf), "%.4f", data.turbidityVoltage);
         snprintf(turbStatusBuf, sizeof(turbStatusBuf), "\"%s\"",
-                 data.turbidityDirty ? "dirty" : "normal");
+                 data.turbidityDirty ? "dirty"
+                                     : (data.turbidityCloudy ? "cloudy" : "clear"));
     } else {
         strlcpy(turbVoltageBuf, "null", sizeof(turbVoltageBuf));
         strlcpy(turbStatusBuf, "null", sizeof(turbStatusBuf));
@@ -324,13 +298,29 @@ void publishSensors(const SensorData &data)
     if (data.flowVolumeValid) snprintf(flowVolumeBuf, sizeof(flowVolumeBuf), "%.3f", data.flowVolumeLiters);
     else strlcpy(flowVolumeBuf, "null", sizeof(flowVolumeBuf));
 
+    const Logic::ActuatorState &actuators = data.actuators;
     snprintf(message.payload, sizeof(message.payload),
              "{\"payload\":[{\"sensors\":{\"water_temp\":%s,\"ph\":%s,\"tds\":%s,"
              "\"turbidity_voltage\":%s,\"turbidity_status\":%s,\"distance\":%s,\"light\":%s,\"ph_up_level\":%s,"
              "\"nutrient_a_level\":%s,\"nutrient_b_level\":%s,\"ph_down_level\":%s,"
-             "\"flow_rate_lpm\":%s,\"flow_volume_l\":%s}}]}",
-             tempBuf, phBuf, tdsBuf, turbVoltageBuf, turbStatusBuf, distBuf, lightBuf, phUpBuf,
-             nutrientABuf, nutrientBBuf, phDownBuf, flowRateBuf, flowVolumeBuf);
+             "\"flow_rate_lpm\":%s,\"flow_volume_l\":%s},"
+             "\"actuators\":{\"ph_up_pump\":%d,\"ph_down_pump\":%d,\"nutrient_pump\":%d,"
+             "\"water_pump\":%d,\"solenoid_valve\":%d,\"grow_light\":%d,\"aerator\":%d},"
+             "\"logic\":{\"state\":\"%s\",\"fault_reason\":\"%s\","
+             "\"planting_day\":%u,\"planting_week\":%u,\"target_tds\":%.1f}}]}",
+             tempBuf, phBuf, tdsBuf, turbVoltageBuf, turbStatusBuf, distBuf,
+             lightBuf, phUpBuf, nutrientABuf, nutrientBBuf, phDownBuf,
+             flowRateBuf, flowVolumeBuf,
+             actuators.phUpPump ? 1 : 0,
+             actuators.phDownPump ? 1 : 0,
+             actuators.nutrientPump ? 1 : 0,
+             actuators.waterPump ? 1 : 0,
+             actuators.solenoidValve ? 1 : 0,
+             actuators.growLight ? 1 : 0,
+             actuators.aerator ? 1 : 0,
+             Logic::stateName(actuators.state), actuators.faultReason,
+             static_cast<unsigned>(actuators.plantingDay),
+             static_cast<unsigned>(actuators.plantingWeek), actuators.targetTds);
 
     xQueueSend(queue, &message, 0);
 }
